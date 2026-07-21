@@ -26,6 +26,11 @@ export const REAP_EXITED_AFTER_MS = Number(
   process.env.REAP_EXITED_AFTER_MS || 5 * 60 * 1000
 );
 
+// Grace period after a kill signal before escalating to SIGKILL. Interactive
+// login shells (the `terminal` kind) ignore SIGTERM, so without escalation a
+// "stop" request would leave the session running forever.
+export const KILL_ESCALATE_MS = Number(process.env.KILL_ESCALATE_MS || 1500);
+
 export const HOME_DIR = os.homedir();
 
 // CLIs this dashboard knows how to launch. `bin` is resolved via a login
