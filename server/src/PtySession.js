@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import pty from 'node-pty';
-import { SCROLLBACK_BYTES, IDLE_AFTER_MS } from './config.js';
+import { SCROLLBACK_BYTES, IDLE_AFTER_MS, KILL_ESCALATE_MS } from './config.js';
 
 /**
  * A single long-lived PTY running one CLI. Owns its child process, a bounded
@@ -29,6 +29,7 @@ export class PtySession extends EventEmitter {
     this.exitSignal = null;
     this.status = 'starting';
     this._idleTimer = null;
+    this._killTimer = null;
 
     // Scrollback ring: array of Buffer chunks with a running byte total.
     this._buffers = [];
@@ -82,6 +83,7 @@ export class PtySession extends EventEmitter {
     this.exitCode = exitCode;
     this.exitSignal = signal ?? null;
     if (this._idleTimer) clearTimeout(this._idleTimer);
+    if (this._killTimer) clearTimeout(this._killTimer);
     this.emit('status', this.status);
     this.emit('exit', { exitCode, signal });
   }
@@ -151,6 +153,20 @@ export class PtySession extends EventEmitter {
     } catch {
       /* already gone */
     }
+    if (signal === 'SIGKILL') return;
+    // Interactive login shells (`terminal` kind) ignore SIGTERM; escalate to
+    // SIGKILL if the child hasn't exited within the grace period so a "stop"
+    // request always terminates the session.
+    if (this._killTimer) clearTimeout(this._killTimer);
+    this._killTimer = setTimeout(() => {
+      if (this.status === 'exited') return;
+      try {
+        this.child.kill('SIGKILL');
+      } catch {
+        /* already gone */
+      }
+    }, KILL_ESCALATE_MS);
+    if (this._killTimer.unref) this._killTimer.unref();
   }
 
   toJSON() {
