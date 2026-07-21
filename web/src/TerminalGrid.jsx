@@ -2,7 +2,7 @@ import React from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import TerminalView from './TerminalView.jsx';
 
-const KIND_LABEL = { claude: 'Claude Code', opencode: 'OpenCode' };
+const KIND_LABEL = { claude: 'Claude Code', opencode: 'OpenCode', terminal: 'Terminal' };
 
 function TabHeader({ session, active, onActivate, onClose }) {
   return (

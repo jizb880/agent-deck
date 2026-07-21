@@ -8,6 +8,7 @@
   --accent: #3b6ef6;
   --claude: #c2410c;
   --opencode: #0f8a5f;
+  --terminal: #52607a;
   --danger: #d93a3a;
   --ok: #0f8a5f;
 }
@@ -60,6 +61,7 @@ body {
 .ql:hover { border-color: var(--accent); }
 .ql.claude:hover { border-color: var(--claude); }
 .ql.opencode:hover { border-color: var(--opencode); }
+.ql.terminal:hover { border-color: var(--terminal); }
 
 /* ---------- Persona chips (compact, in Quick Launch) ---------- */
 .persona-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -103,6 +105,7 @@ body {
 .kind-badge { font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 700; letter-spacing: 0.02em; }
 .kind-badge.claude { background: rgba(194, 65, 12, 0.12); color: var(--claude); }
 .kind-badge.opencode { background: rgba(15, 138, 95, 0.12); color: var(--opencode); }
+.kind-badge.terminal { background: rgba(82, 96, 122, 0.12); color: var(--terminal); }
 .chip { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: var(--panel); border: 1px solid var(--border); color: var(--muted); }
 
 /* ---------- Buttons ---------- */

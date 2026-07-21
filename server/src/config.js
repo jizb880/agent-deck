@@ -29,8 +29,10 @@ export const REAP_EXITED_AFTER_MS = Number(
 export const HOME_DIR = os.homedir();
 
 // CLIs this dashboard knows how to launch. `bin` is resolved via a login
-// shell so the user's PATH (e.g. ~/.npm-global/bin) is honored.
+// shell so the user's PATH (e.g. ~/.npm-global/bin) is honored. `terminal`
+// is special-cased in the launcher: it spawns the user's own login shell.
 export const CLI_KINDS = {
   claude: { label: 'Claude Code', bin: 'claude' },
   opencode: { label: 'OpenCode', bin: 'opencode' },
+  terminal: { label: 'Terminal', bin: null },
 };
