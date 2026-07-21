@@ -70,6 +70,12 @@ export default function App() {
     async (payload) => {
       const session = await api.createSession(payload);
       setLaunch(null);
+      // Seed the roster with the POST response so the new tab renders
+      // immediately instead of waiting on (or racing) the WS broadcast;
+      // the next roster frame reconciles authoritative state.
+      setSessions((prev) =>
+        prev.some((s) => s.id === session.id) ? prev : [...prev, session]
+      );
       wsClient.requestList();
       openSession(session.id);
     },

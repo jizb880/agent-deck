@@ -41,6 +41,11 @@ Node 后端 (Fastify + ws + node-pty)
 
 ## 安装
 
+### 平台支持
+
+- **macOS / Linux** — 支持。
+- **Windows** — 暂不支持原生运行：会话统一经 `/bin/bash -lc` + POSIX 引号转义启动，普通终端依赖 `$SHELL`，辅助脚本也是 bash。请在 **WSL** 中运行（WSL 内与 Linux 行为一致）。
+
 ### 前置条件
 
 - **Node.js ≥ 18**。

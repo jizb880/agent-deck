@@ -41,6 +41,11 @@ Node backend (Fastify + ws + node-pty)
 
 ## Install
 
+### Platform support
+
+- **macOS / Linux** — supported.
+- **Windows** — not supported natively: sessions are launched through `/bin/bash -lc` with POSIX quoting, plain terminals use `$SHELL`, and the helper scripts are bash. Run it inside **WSL** instead (everything works there as on Linux).
+
 ### Prerequisites
 
 - **Node.js ≥ 18**.
