@@ -1,0 +1,19 @@
+{
+  "name": "control-app-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Backend for the Claude Code + OpenCode multi-agent dashboard (Fastify + ws + node-pty)",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node scripts/fix-node-pty.js && node src/index.js",
+    "dev": "node scripts/fix-node-pty.js && node --watch src/index.js",
+    "postinstall": "node scripts/fix-node-pty.js"
+  },
+  "dependencies": {
+    "@fastify/static": "^7.0.4",
+    "fastify": "^4.28.1",
+    "node-pty": "1.1.0",
+    "ws": "^8.18.0"
+  }
+}

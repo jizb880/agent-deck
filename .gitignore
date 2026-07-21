@@ -1,0 +1,5 @@
+node_modules/
+web/dist/
+data/personas.json
+*.log
+.DS_Store
