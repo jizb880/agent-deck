@@ -1,147 +1,146 @@
-# Agent Control · Claude Code + OpenCode 多 Agent 集中管理 Dashboard
+# Agent Deck
 
-一个在 **macOS 12 (Monterey)** 上本地运行的 Web 控制台，用于**同时管理和调度多个 `claude` 与 `opencode` CLI 实例**：真实 PTY 终端、会话持久化（刷新/关闭浏览器后进程仍在后台运行并可重新附着）、角色 (Persona) 预设一键拉起、以及类似 OpenCode Web 的侧边栏 + 多标签/分屏界面。
+**English** | [简体中文](./README.zh-CN.md)
 
-> 已在本机验证环境：macOS 12.7.6 · Intel x86_64 · Node v24.18.0 · npm 11.16.0 · `claude` 2.1.x · `opencode` 1.18.x。
-
----
-
-## 功能一览
-
-- **多 CLI 实例驱动** — `xterm.js`（前端）+ `node-pty`（后端）+ WebSocket 实时双向通信，完整支持 ANSI 颜色与交互式菜单。
-- **进程持久化 / 重新附着** — 每个 PTY 会话由后端长驻进程托管，并保留最近 1 MiB 滚屏历史；浏览器刷新或断线后自动 `attach` 并重绘完整终端历史。
-- **角色 / Persona 系统** — 在 UI 中配置并保存「重构专家 / 安全审计员 / 文档撰写员」等预设，含系统提示词、模型、工作目录、环境变量、额外参数；侧边栏「以此身份启动 →」一键拉起。
-- **多任务看板** — 侧边栏实时显示所有会话状态（启动中 / 运行中 / 处理中 / 空闲 / 已退出）与 Agent 类型；主区域支持标签切换与分屏平铺，拖拽分隔条实时同步终端尺寸。
-- **工作区切换** — 每个会话可关联不同本地项目路径。
+A local web dashboard for running and orchestrating **multiple AI coding agent CLIs (`claude` / `opencode`) and plain shell terminals side by side**: real PTY terminals, session persistence (processes keep running across browser refreshes and can be re-attached), one-click persona presets, and a sidebar + tabs / split-pane layout.
 
 ---
 
-## 架构
+## Features
+
+- **Multiple CLI instances** — `xterm.js` (frontend) + `node-pty` (backend) + WebSocket for real-time bidirectional I/O, with full ANSI color and interactive TUI support.
+- **Process persistence / re-attach** — every PTY session is hosted by the long-running backend and keeps 1 MiB of scrollback; after a browser refresh or disconnect the frontend re-attaches and replays the full terminal history.
+- **Personas** — configure and save presets (e.g. Refactor Expert / Security Auditor / Doc Writer) with system prompt, model, working directory, env vars and extra args; launch them with one click from the Quick Launch area.
+- **Plain terminals** — the "+ 终端" button opens your login shell as a tab, right next to the agent sessions.
+- **Session board** — the sidebar shows live status for every session (starting / running / busy / idle / exited) and its kind; the main area supports tabs or resizable split panes with live terminal resize.
+- **Per-session workspace** — each session can target a different local project directory.
+
+---
+
+## Architecture
 
 ```
-浏览器 (React + xterm.js)
-  ├── REST  /api/*   ── 个人角色/会话的增删改查
+Browser (React + xterm.js)
+  ├── REST  /api/*   ── CRUD for personas / sessions
   └── WS    /ws      ── attach / input / resize ↔ output / status / exit / sessions
         │
-Node 后端 (Fastify + ws + node-pty)
-  ├── httpRoutes ── personaStore (JSON 持久化) ── launcher (persona → argv/env/cwd)
-  └── wsBridge ──── SessionManager ── PtySession { node-pty 子进程 + 1MiB 滚屏环形缓冲 }
+Node backend (Fastify + ws + node-pty)
+  ├── httpRoutes ── personaStore (JSON persistence) ── launcher (persona → argv/env/cwd)
+  └── wsBridge ──── SessionManager ── PtySession { node-pty child + 1MiB scrollback ring }
         │
-   claude CLI / opencode CLI  (真实交互式 TUI)
+   claude CLI / opencode CLI / login shell  (real interactive TUIs)
 ```
 
-**关键设计**
+**Key design points**
 
-1. **持久化模型** — PTY 是后端长驻进程的子进程，各自维护 1 MiB 滚屏缓冲。浏览器刷新/关闭 → 子进程继续运行；重连时前端重新 `attach`，后端回放缓冲，xterm 重绘完整历史。**后端重启**会结束子进程（内存态注册表）；如需跨后端重启存活，见下方「进阶」。
-2. **启动方式** — `bash -lc 'exec <cli> …'`。登录 shell 加载用户 PATH（保证 `~/.npm-global/bin` 里的 `claude`/`opencode` 可用），`exec` 让 PTY 直接变成 CLI 本身，信号 / 尺寸 / Ctrl-C 原样透传。所有 persona 值经 POSIX 单引号转义，杜绝命令注入。
-3. **实时尺寸同步** — 前端 `ResizeObserver` + `xterm-addon-fit` 计算 cols/rows，经 WS `resize` 帧同步给 `node-pty`，多标签/分屏拖拽即时生效。
+1. **Persistence model** — PTYs are children of the long-running backend, each with its own scrollback buffer. Refreshing or closing the browser leaves the child running; on reconnect the frontend re-attaches, the backend replays the buffer, and xterm redraws the full history. A **backend restart** ends the children (in-memory registry); see "Advanced" below if you need survival across backend restarts.
+2. **Launch strategy** — `bash -lc 'exec <cli> …'`. The login shell loads the user's PATH (so globally installed `claude` / `opencode` resolve), and `exec` makes the PTY *become* the CLI, so signals / resize / Ctrl-C pass straight through. All persona values are POSIX single-quoted to rule out command injection. Plain terminals spawn your `$SHELL -l` directly.
+3. **Live resize** — the frontend combines `ResizeObserver` + `xterm-addon-fit` to compute cols/rows and syncs them to `node-pty` over WS `resize` frames, so tab switches and split-pane drags apply instantly.
 
 ---
 
-## 安装（macOS 12 Monterey）
+## Install
 
-### 前置条件
+### Prerequisites
 
-- **Node.js ≥ 18**（本机为 v24.18.0）。建议用 `nvm` 安装，避免污染系统。
-- **Xcode Command Line Tools**：`xcode-select --install`（node-pty 的原生模块需要）。
-- 已安装并登录 `claude` 与 `opencode` CLI，且在 PATH 中（本机在 `~/.npm-global/bin`）。
+- **Node.js ≥ 18**.
+- A C/C++ toolchain for `node-pty`'s native module (macOS: `xcode-select --install`; Linux: `build-essential` / `python3`).
+- `claude` and/or `opencode` CLIs installed, logged in, and on your PATH (only needed for the kinds you plan to launch).
 
-### 一键安装
+### One-shot setup
 
 ```bash
-cd control_app
 npm run setup
 ```
 
-`setup` 会：安装 `server/` 与 `web/` 依赖 → **修正 node-pty 的 `spawn-helper` 可执行权限**（见下方「重要」）→ 构建前端到 `web/dist`。
+`setup` installs `server/` and `web/` dependencies → **fixes the executable bit on node-pty's `spawn-helper`** (see "Important" below) → builds the frontend into `web/dist`.
 
-### 启动
+### Run
 
 ```bash
-# 生产模式：后端在单一端口同时提供 UI 与 WebSocket
+# Production mode: the backend serves the UI and WebSocket on a single port
 ./scripts/start.sh
-# 打开 http://127.0.0.1:4173
+# open http://127.0.0.1:4173
 
-# 开发模式：Vite HMR + 后端热重载（Vite 代理 /api 与 /ws）
+# Dev mode: Vite HMR + backend hot reload (Vite proxies /api and /ws)
 npm run dev
-# 打开 http://127.0.0.1:5173
+# open http://127.0.0.1:5173
 ```
 
-可用环境变量：`PORT`（默认 4173）、`HOST`（默认 127.0.0.1）、`SCROLLBACK_BYTES`、`IDLE_AFTER_MS`、`CONTROL_APP_DATA`（personas.json 存放目录）。
+Environment variables: `PORT` (default 4173), `HOST` (default 127.0.0.1), `SCROLLBACK_BYTES`, `IDLE_AFTER_MS`, `CONTROL_APP_DATA` (directory for personas.json).
 
 ---
 
-## ⚠️ 重要：node-pty 在此平台的坑（已自动修复）
+## ⚠️ Important: node-pty pitfall (auto-fixed)
 
-在 **macOS 12 / Node 24 / npm 11** 上实测：`node-pty@1.1.0` 会安装预编译二进制，但把 `spawn-helper` 释放成 **不可执行**（`-rw-r--r--`），导致 `pty.spawn()` 抛出 `Error: posix_spawnp failed`；同时 npm 11 的 allow-scripts 机制默认会**跳过 node-pty 的 postinstall**。
+With some macOS + recent-npm combinations, `node-pty` installs a prebuilt binary but leaves `spawn-helper` **non-executable** (`-rw-r--r--`), making `pty.spawn()` throw `Error: posix_spawnp failed`; recent npm versions may also skip node-pty's postinstall script by default.
 
-本项目已内置修复：`server/scripts/fix-node-pty.js`（作为 server 的 postinstall 运行，并在 `setup.sh` / `start.sh` 中幂等重跑），核心就是：
+This repo ships a fix: `server/scripts/fix-node-pty.js` (runs as the server's postinstall and is re-run idempotently by `setup.sh` / `start.sh`). The essence:
 
 ```bash
-chmod +x server/node_modules/node-pty/prebuilds/darwin-x64/spawn-helper
-# Apple Silicon 为 darwin-arm64
+chmod +x server/node_modules/node-pty/prebuilds/<platform>/spawn-helper
+# e.g. darwin-x64 or darwin-arm64
 ```
 
-若你在别处仍遇到 `posix_spawnp failed`，手动执行上面这行即可。
+If you still hit `posix_spawnp failed` elsewhere, run that line manually.
 
 ---
 
-## 使用
+## Usage
 
-1. 左侧 **快捷启动** 直接开一个裸 `claude` / `opencode` 会话；或在 **角色** 区点某个 Persona 的「以此身份启动 →」。
-2. 启动对话框可覆盖工作目录 / 模型 / 标签，再确认拉起。
-3. 主区域用顶部「标签 / 分屏」切换布局；分屏下拖拽中间分隔条即可调整并实时同步终端尺寸。
-4. 侧边栏 **会话** 列表实时显示状态；「停止」发送 SIGTERM，退出后可「移除」。
-5. **刷新浏览器**：会话不中断，重新打开标签即恢复完整历史。
+1. **Quick Launch** (sidebar): open a bare `claude` / `opencode` session, click a **persona chip** to launch with that preset, or hit **+ 终端** for a plain shell tab.
+2. The launch dialog lets you override working dir / model / title before spawning.
+3. Switch the main area between **Tabs** and **Split** at the top; drag the split handles to resize terminals live.
+4. The sidebar **Sessions** list shows live status. The sidebar **停止** button and the tab's **×** both do the same thing: terminate the CLI and close its tab. Exited sessions linger briefly (readable final output), can be removed manually, and are auto-reaped.
+5. **Refreshing the browser** never interrupts sessions — reopen a tab to restore full history.
 
-### Persona → CLI 参数映射
+### Persona → CLI flag mapping
 
-| 字段 | Claude Code | OpenCode |
+| Field | Claude Code | OpenCode |
 |---|---|---|
-| 工作目录 cwd | 进程 cwd | 进程 cwd（即 project 目录）|
-| 模型 model | `--model` | `--model provider/model` |
+| Working dir (cwd) | process cwd | process cwd (project dir) |
+| Model | `--model` | `--model provider/model` |
 | Agent | `--agent` | `--agent` |
-| System Prompt | `--append-system-prompt` | 经 `--append-system-prompt`（若不支持则忽略）|
-| 额外目录 addDirs | `--add-dir`（每项）| — |
-| 环境变量 env | 注入进程环境 | 注入进程环境 |
-| 额外参数 extraArgs | 原样追加 | 原样追加 |
+| System prompt | `--append-system-prompt` | via `--append-system-prompt` (ignored if unsupported) |
+| Extra dirs (addDirs) | `--add-dir` (each) | — |
+| Env vars | injected into process env | injected into process env |
+| Extra args | appended verbatim | appended verbatim |
 
-> 角色数据保存在 `data/personas.json`，首次启动自动写入三个示例角色。
+> Personas are stored in `data/personas.json`; three example personas are seeded on first start.
 
 ---
 
-## 进阶：跨「后端重启」存活
+## Advanced: surviving backend restarts
 
-当前会话在后端进程内存中，后端重启会结束所有子 CLI。若需要更强的持久化，可把 `PtySession` 的启动命令包一层复用型多路复用器，例如：
+Sessions live in the backend's memory, so restarting the backend ends the child CLIs. For stronger persistence, wrap the launch command in a re-attachable multiplexer:
 
 ```js
-// launcher.js 中把 commandLine 改为：
-// exec tmux new-session -A -s control_<id> "<原命令>"
+// in launcher.js change commandLine to:
+// exec tmux new-session -A -s deck_<id> "<original command>"
 ```
 
-这样后端重启后仍可 `tmux attach` 回到会话（需本机安装 `tmux` 或 `dtach`）。属于可选增强，不在 MVP 默认路径内。
+Then after a backend restart you can still `tmux attach` to the session (requires `tmux` or `dtach`). Optional enhancement, not part of the default path.
 
 ---
 
-## 目录结构
+## Repository layout
 
 ```
-control_app/
-├── package.json            # 顶层脚本 (setup / dev / build / start)
+agent-deck/
+├── package.json            # top-level scripts (setup / dev / build / start)
 ├── scripts/                # setup.sh / start.sh / dev.sh
-├── data/personas.json      # 角色预设（首启自动生成）
-├── server/                 # 后端 (Fastify + ws + node-pty)
+├── data/personas.json      # persona presets (seeded on first start, git-ignored)
+├── server/                 # backend (Fastify + ws + node-pty)
 │   ├── src/{index,config,launcher,personaStore,PtySession,SessionManager,wsBridge,httpRoutes}.js
 │   └── scripts/fix-node-pty.js
-└── web/                    # 前端 (React + Vite + xterm.js)
+└── web/                    # frontend (React + Vite + xterm.js)
     └── src/{App,Sidebar,TerminalGrid,TerminalView,LaunchDialog,PersonaEditor,wsClient,api}.jsx|js
 ```
 
-## 安全说明
+## Security notes
 
-- 默认仅绑定 `127.0.0.1`，**无鉴权** —— 这是一个本地开发者工具。若要绑定到 `0.0.0.0` 或经网络暴露，请自行在前面加反向代理 + 认证；任何能访问该端口的人都能在你机器上以你的身份运行 CLI 命令。
-- persona 值全部经 POSIX 单引号转义后再拼进 `bash -lc`，防止命令注入。
-- persona 的 `env` 会过滤掉能让非交互 `bash -lc` 提前执行代码的危险键（`BASH_ENV` / `ENV` / `BASH_FUNC_*` / `LD_PRELOAD` / `DYLD_*` / `PROMPT_COMMAND`），避免通过环境变量绕过「仅能启动 CLI」的边界。`extraArgs` 仍属「操作者可信输入」，请勿填入不受信内容。
-- 已退出的会话在保留一段时间（默认 5 分钟，可用 `REAP_EXITED_AFTER_MS` 调整）供最后一次重连读取输出/退出码后自动回收，释放其滚屏缓冲，避免长时间运行 + 会话频繁进出导致内存无限增长。
-- 慢客户端会触发背压：当 WebSocket 发送缓冲超过阈值时后端暂停对应 PTY 的读取（内核管道天然限流），而不是在 Node 里无限缓冲输出。
-
+- Binds to `127.0.0.1` only by default, with **no authentication** — this is a local developer tool. If you bind to `0.0.0.0` or expose it over the network, put a reverse proxy with auth in front; anyone who can reach the port can run CLI commands as you on your machine.
+- All persona values are POSIX single-quoted before being embedded in `bash -lc`, preventing command injection.
+- Persona `env` filters out keys that would let a non-interactive `bash -lc` execute code early (`BASH_ENV` / `ENV` / `BASH_FUNC_*` / `LD_PRELOAD` / `DYLD_*` / `PROMPT_COMMAND`), so env vars can't bypass the "can only launch a CLI" boundary. `extraArgs` remain operator-trusted input — don't paste untrusted content there.
+- Exited sessions are kept for a grace period (default 5 minutes, tune with `REAP_EXITED_AFTER_MS`) so a client can still read final output / exit code, then auto-reaped to free their scrollback and keep memory bounded under session churn.
+- Slow clients trigger backpressure: when a WebSocket send buffer exceeds a threshold the backend pauses reading from that PTY (the kernel pipe throttles naturally) instead of buffering output unboundedly in Node.

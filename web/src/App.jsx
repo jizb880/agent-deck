@@ -80,9 +80,16 @@ export default function App() {
     }
   }, [handleCreate]);
 
-  const handleKill = useCallback(async (id) => {
-    await api.killSession(id, 'SIGTERM').catch(() => {});
-  }, []);
+  // Sidebar「停止」and the tab's × both mean "close this terminal":
+  // terminate the CLI (SIGTERM) and close its tab. The session lingers in the
+  // sidebar as 已退出 (removable / auto-reaped) so final output stays readable.
+  const closeSession = useCallback(
+    (id) => {
+      api.killSession(id, 'SIGTERM').catch(() => {});
+      closeTab(id);
+    },
+    [closeTab]
+  );
 
   const handleRemove = useCallback(
     async (id) => {
@@ -110,7 +117,7 @@ export default function App() {
         onQuickLaunch={(kind) => setLaunch({ kind })}
         onQuickTerminal={handleQuickTerminal}
         onOpenSession={openSession}
-        onKillSession={handleKill}
+        onKillSession={closeSession}
         onRemoveSession={handleRemove}
         onNewPersona={() => setEditingPersona('new')}
         onEditPersona={(p) => setEditingPersona(p)}
@@ -144,7 +151,7 @@ export default function App() {
           sessions={sessions}
           layout={layout}
           onActivate={setActiveId}
-          onCloseTab={closeTab}
+          onCloseTab={closeSession}
         />
       </main>
 
