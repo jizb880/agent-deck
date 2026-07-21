@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { api } from './api.js';
 import { wsClient } from './wsClient.js';
 import Sidebar from './Sidebar.jsx';
@@ -16,6 +16,11 @@ export default function App() {
   const [openTabs, setOpenTabs] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [layout, setLayout] = useState('tabs'); // 'tabs' | 'split'
+
+  // Client-side display order for the sidebar session list (drag to reorder).
+  // The server roster is unordered from the UI's perspective; new sessions
+  // are appended, vanished ones dropped.
+  const [sessionOrder, setSessionOrder] = useState([]);
 
   const [launch, setLaunch] = useState(null); // { persona } | { kind } | true
   const [editingPersona, setEditingPersona] = useState(null); // persona | 'new' | null
@@ -106,11 +111,47 @@ export default function App() {
     setOpenTabs((tabs) => tabs.filter((t) => live.has(t)));
   }, [sessions]);
 
+  // Keep sessionOrder in sync with the roster: drop gone ids, append new ones.
+  useEffect(() => {
+    setSessionOrder((order) => {
+      const ids = sessions.map((s) => s.id);
+      const live = new Set(ids);
+      const kept = order.filter((id) => live.has(id));
+      const known = new Set(kept);
+      for (const id of ids) if (!known.has(id)) kept.push(id);
+      return kept;
+    });
+  }, [sessions]);
+
+  const orderedSessions = useMemo(() => {
+    const byId = new Map(sessions.map((s) => [s.id, s]));
+    return sessionOrder.map((id) => byId.get(id)).filter(Boolean);
+  }, [sessions, sessionOrder]);
+
+  // Move `fromId` to `toId`'s position in an id list (drag reorder).
+  const moveId = (list, fromId, toId) => {
+    const from = list.indexOf(fromId);
+    const to = list.indexOf(toId);
+    if (from < 0 || to < 0 || from === to) return list;
+    const next = [...list];
+    next.splice(from, 1);
+    next.splice(to, 0, fromId);
+    return next;
+  };
+
+  const reorderTabs = useCallback((fromId, toId) => {
+    setOpenTabs((tabs) => moveId(tabs, fromId, toId));
+  }, []);
+
+  const reorderSessions = useCallback((fromId, toId) => {
+    setSessionOrder((order) => moveId(order, fromId, toId));
+  }, []);
+
   return (
     <div className="app">
       <Sidebar
         personas={personas}
-        sessions={sessions}
+        sessions={orderedSessions}
         connected={connected}
         activeId={activeId}
         onLaunchPersona={(persona) => setLaunch({ persona })}
@@ -119,6 +160,7 @@ export default function App() {
         onOpenSession={openSession}
         onKillSession={closeSession}
         onRemoveSession={handleRemove}
+        onReorderSession={reorderSessions}
         onNewPersona={() => setEditingPersona('new')}
         onEditPersona={(p) => setEditingPersona(p)}
       />
@@ -152,6 +194,7 @@ export default function App() {
           layout={layout}
           onActivate={setActiveId}
           onCloseTab={closeSession}
+          onReorderTab={reorderTabs}
         />
       </main>
 

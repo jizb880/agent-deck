@@ -54,14 +54,17 @@ body {
 
 .quick-launch { display: flex; gap: 8px; }
 .ql {
-  flex: 1; padding: 9px 8px; border-radius: 8px; border: 1px solid var(--border);
-  background: var(--panel-2); color: var(--text); cursor: pointer; font-weight: 600;
-  font-size: 12px; transition: 0.15s;
+  flex: 1; padding: 9px 6px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--panel-2); cursor: pointer; transition: 0.15s;
+  font-family: inherit; font-size: 12.5px; font-weight: 650;
+  letter-spacing: 0.02em; white-space: nowrap;
 }
-.ql:hover { border-color: var(--accent); }
-.ql.claude:hover { border-color: var(--claude); }
-.ql.opencode:hover { border-color: var(--opencode); }
-.ql.terminal:hover { border-color: var(--terminal); }
+.ql.claude { color: var(--claude); background: rgba(194, 65, 12, 0.06); }
+.ql.opencode { color: var(--opencode); background: rgba(15, 138, 95, 0.06); }
+.ql.terminal { color: var(--terminal); background: rgba(82, 96, 122, 0.06); }
+.ql.claude:hover { border-color: var(--claude); background: rgba(194, 65, 12, 0.12); }
+.ql.opencode:hover { border-color: var(--opencode); background: rgba(15, 138, 95, 0.12); }
+.ql.terminal:hover { border-color: var(--terminal); background: rgba(82, 96, 122, 0.12); }
 
 /* ---------- Persona chips (compact, in Quick Launch) ---------- */
 .persona-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -82,9 +85,11 @@ body {
 .sess-row {
   display: flex; align-items: flex-start; gap: 8px; padding: 8px;
   border-radius: 8px; cursor: pointer; border: 1px solid transparent;
+  user-select: none;
 }
 .sess-row:hover { background: var(--panel-2); }
 .sess-row.active { background: var(--panel-2); border-color: var(--accent); }
+.sess-row.dragging { opacity: 0.4; }
 .sess-meta { flex: 1; min-width: 0; }
 .sess-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sess-sub { display: flex; gap: 6px; align-items: center; margin: 2px 0; }
@@ -147,8 +152,10 @@ body {
   display: flex; align-items: center; gap: 7px; padding: 7px 10px; border-radius: 8px 8px 0 0;
   background: var(--panel-2); border: 1px solid var(--border); border-bottom: none;
   cursor: pointer; white-space: nowrap; color: var(--muted); font-size: 12px;
+  user-select: none;
 }
 .tab.active { background: var(--bg); color: var(--text); border-color: var(--accent); }
+.tab.dragging { opacity: 0.4; }
 .tab-title { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
 .tab-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; }
 .tab-close:hover { color: var(--danger); }

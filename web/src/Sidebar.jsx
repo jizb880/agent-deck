@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 const KIND_LABEL = { claude: 'Claude Code', opencode: 'OpenCode', terminal: 'Terminal' };
 const STATUS_LABEL = {
@@ -9,9 +9,33 @@ const STATUS_LABEL = {
   exited: '已退出',
 };
 
-function SessionRow({ session, active, onOpen, onKill, onRemove }) {
+function SessionRow({
+  session,
+  active,
+  dragging,
+  onOpen,
+  onKill,
+  onRemove,
+  onDragStart,
+  onDragOver,
+  onDragEnd,
+}) {
   return (
-    <div className={active ? 'sess-row active' : 'sess-row'} onClick={() => onOpen(session.id)}>
+    <div
+      className={`sess-row${active ? ' active' : ''}${dragging ? ' dragging' : ''}`}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', session.id); // Firefox needs data to start a drag
+        onDragStart(session.id);
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        onDragOver(session.id);
+      }}
+      onDragEnd={onDragEnd}
+      onClick={() => onOpen(session.id)}
+    >
       <span className={`dot ${session.status}`} />
       <div className="sess-meta">
         <div className="sess-title">{session.title}</div>
@@ -49,9 +73,16 @@ export default function Sidebar({
   onOpenSession,
   onKillSession,
   onRemoveSession,
+  onReorderSession,
   onNewPersona,
   onEditPersona,
 }) {
+  // Live drag reorder for the session list.
+  const [dragId, setDragId] = useState(null);
+  const handleDragOver = (overId) => {
+    if (dragId && dragId !== overId) onReorderSession(dragId, overId);
+  };
+
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
@@ -108,9 +139,13 @@ export default function Sidebar({
               key={s.id}
               session={s}
               active={s.id === activeId}
+              dragging={s.id === dragId}
               onOpen={onOpenSession}
               onKill={onKillSession}
               onRemove={onRemoveSession}
+              onDragStart={setDragId}
+              onDragOver={handleDragOver}
+              onDragEnd={() => setDragId(null)}
             />
           ))}
           {sessions.length === 0 && <div className="muted small">没有运行中的会话。</div>}
