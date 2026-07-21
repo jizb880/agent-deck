@@ -1,13 +1,24 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import TerminalView from './TerminalView.jsx';
 
 const KIND_LABEL = { claude: 'Claude Code', opencode: 'OpenCode', terminal: 'Terminal' };
 
-function TabHeader({ session, active, onActivate, onClose }) {
+function TabHeader({ session, active, dragging, onActivate, onClose, onDragStart, onDragOver, onDragEnd }) {
   return (
     <div
-      className={active ? 'tab active' : 'tab'}
+      className={`tab${active ? ' active' : ''}${dragging ? ' dragging' : ''}`}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', session.id); // Firefox needs data to start a drag
+        onDragStart(session.id);
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        onDragOver(session.id);
+      }}
+      onDragEnd={onDragEnd}
       onClick={() => onActivate(session.id)}
       title={session.cwd}
     >
@@ -34,7 +45,14 @@ export default function TerminalGrid({
   layout,
   onActivate,
   onCloseTab,
+  onReorderTab,
 }) {
+  // Live drag reorder: while a tab is dragged over a sibling, swap immediately.
+  const [dragId, setDragId] = useState(null);
+  const handleDragOver = (overId) => {
+    if (dragId && dragId !== overId) onReorderTab(dragId, overId);
+  };
+
   const byId = new Map(sessions.map((s) => [s.id, s]));
   const tabs = openTabs.filter((id) => byId.has(id));
 
@@ -91,8 +109,12 @@ export default function TerminalGrid({
             key={id}
             session={byId.get(id)}
             active={id === activeId}
+            dragging={id === dragId}
             onActivate={onActivate}
             onClose={onCloseTab}
+            onDragStart={setDragId}
+            onDragOver={handleDragOver}
+            onDragEnd={() => setDragId(null)}
           />
         ))}
       </div>
