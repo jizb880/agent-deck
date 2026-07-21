@@ -1,6 +1,6 @@
 import React from 'react';
 
-const KIND_LABEL = { claude: 'Claude Code', opencode: 'OpenCode' };
+const KIND_LABEL = { claude: 'Claude Code', opencode: 'OpenCode', terminal: 'Terminal' };
 const STATUS_LABEL = {
   starting: '启动中',
   running: '运行中',
@@ -45,6 +45,7 @@ export default function Sidebar({
   activeId,
   onLaunchPersona,
   onQuickLaunch,
+  onQuickTerminal,
   onOpenSession,
   onKillSession,
   onRemoveSession,
@@ -71,6 +72,9 @@ export default function Sidebar({
           </button>
           <button className="ql opencode" onClick={() => onQuickLaunch('opencode')}>
             + OpenCode
+          </button>
+          <button className="ql terminal" title="打开一个本机 shell 终端页签" onClick={onQuickTerminal}>
+            + 终端
           </button>
         </div>
         {personas.length > 0 && (

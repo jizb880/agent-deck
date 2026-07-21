@@ -71,6 +71,15 @@ export default function App() {
     [openSession]
   );
 
+  // One-click plain shell terminal — no dialog, opens straight as a tab.
+  const handleQuickTerminal = useCallback(async () => {
+    try {
+      await handleCreate({ kind: 'terminal' });
+    } catch (e) {
+      setToast(String(e.message || e));
+    }
+  }, [handleCreate]);
+
   const handleKill = useCallback(async (id) => {
     await api.killSession(id, 'SIGTERM').catch(() => {});
   }, []);
@@ -99,6 +108,7 @@ export default function App() {
         activeId={activeId}
         onLaunchPersona={(persona) => setLaunch({ persona })}
         onQuickLaunch={(kind) => setLaunch({ kind })}
+        onQuickTerminal={handleQuickTerminal}
         onOpenSession={openSession}
         onKillSession={handleKill}
         onRemoveSession={handleRemove}

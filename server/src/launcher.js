@@ -47,6 +47,29 @@ export function buildLaunch(persona, overrides = {}) {
   if (!spec) throw new Error(`Unknown CLI kind: ${kind}`);
 
   const cwd = overrides.cwd || persona.cwd || HOME_DIR;
+
+  const env = safeEnvMerge(persona.env, overrides.env, {
+    // Help CLIs render rich TUIs inside the PTY.
+    TERM: 'xterm-256color',
+    COLORTERM: 'truecolor',
+    FORCE_COLOR: '3',
+  });
+
+  // Plain terminal: spawn the user's own login shell interactively — no CLI,
+  // no persona flags. The PTY dies when the shell exits.
+  if (kind === 'terminal') {
+    const shell = process.env.SHELL || '/bin/zsh';
+    return {
+      kind,
+      file: shell,
+      args: ['-l'],
+      cwd,
+      env,
+      commandLine: `${shell} -l`,
+      label: persona.name || spec.label,
+    };
+  }
+
   const model = overrides.model || persona.model;
   const agent = overrides.agent || persona.agent;
   const systemPrompt = overrides.appendSystemPrompt ?? persona.appendSystemPrompt;
@@ -70,13 +93,6 @@ export function buildLaunch(persona, overrides = {}) {
   for (const a of extraArgs) parts.push(shellQuote(a));
 
   const commandLine = 'exec ' + parts.join(' ');
-
-  const env = safeEnvMerge(persona.env, overrides.env, {
-    // Help CLIs render rich TUIs inside the PTY.
-    TERM: 'xterm-256color',
-    COLORTERM: 'truecolor',
-    FORCE_COLOR: '3',
-  });
 
   return {
     kind,
