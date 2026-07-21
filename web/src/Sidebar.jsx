@@ -25,7 +25,7 @@ function SessionRow({ session, active, onOpen, onKill, onRemove }) {
       </div>
       <div className="sess-actions" onClick={(e) => e.stopPropagation()}>
         {session.status !== 'exited' ? (
-          <button className="mini danger" title="发送 SIGTERM" onClick={() => onKill(session.id)}>
+          <button className="mini danger" title="停止进程并关闭终端页签" onClick={() => onKill(session.id)}>
             停止
           </button>
         ) : (
