@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 const KIND_LABEL = { claude: 'Claude Code', opencode: 'OpenCode', terminal: 'Terminal' };
 const STATUS_LABEL = {
@@ -16,14 +16,39 @@ function SessionRow({
   onOpen,
   onKill,
   onRemove,
+  onRename,
   onDragStart,
   onDragOver,
   onDragEnd,
 }) {
+  // Inline rename: double-click the title (or hit ✎) to edit; Enter/blur
+  // confirms, Esc cancels.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(session.title);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  const startEdit = () => {
+    setDraft(session.title);
+    setEditing(true);
+  };
+
+  const commit = () => {
+    setEditing(false);
+    const title = draft.trim();
+    if (title && title !== session.title) onRename(session.id, title);
+  };
+
   return (
     <div
       className={`sess-row${active ? ' active' : ''}${dragging ? ' dragging' : ''}`}
-      draggable
+      draggable={!editing}
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', session.id); // Firefox needs data to start a drag
@@ -38,7 +63,28 @@ function SessionRow({
     >
       <span className={`dot ${session.status}`} />
       <div className="sess-meta">
-        <div className="sess-title">{session.title}</div>
+        {editing ? (
+          <input
+            ref={inputRef}
+            className="sess-rename"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commit();
+              else if (e.key === 'Escape') setEditing(false);
+            }}
+            maxLength={80}
+          />
+        ) : (
+          <div className="sess-title" title="双击重命名" onDoubleClick={(e) => {
+            e.stopPropagation();
+            startEdit();
+          }}>
+            {session.title}
+          </div>
+        )}
         <div className="sess-sub">
           <span className={`kind-badge ${session.kind}`}>{KIND_LABEL[session.kind]}</span>
           <span className="status-text">{STATUS_LABEL[session.status] || session.status}</span>
@@ -48,6 +94,9 @@ function SessionRow({
         </div>
       </div>
       <div className="sess-actions" onClick={(e) => e.stopPropagation()}>
+        <button className="mini" title="重命名会话" onClick={startEdit}>
+          ✎
+        </button>
         {session.status !== 'exited' ? (
           <button className="mini danger" title="停止进程并关闭终端页签" onClick={() => onKill(session.id)}>
             停止
@@ -73,6 +122,7 @@ export default function Sidebar({
   onOpenSession,
   onKillSession,
   onRemoveSession,
+  onRenameSession,
   onReorderSession,
   onNewPersona,
   onEditPersona,
@@ -143,6 +193,7 @@ export default function Sidebar({
               onOpen={onOpenSession}
               onKill={onKillSession}
               onRemove={onRemoveSession}
+              onRename={onRenameSession}
               onDragStart={setDragId}
               onDragOver={handleDragOver}
               onDragEnd={() => setDragId(null)}

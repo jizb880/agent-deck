@@ -59,6 +59,15 @@ export class SessionManager extends EventEmitter {
     return session;
   }
 
+  /** Rename a session; broadcasts the updated roster so all clients sync. */
+  rename(id, title) {
+    const s = this.sessions.get(id);
+    if (!s) return null;
+    s.title = title;
+    this._emitSessions();
+    return s;
+  }
+
   kill(id, signal) {
     const s = this.sessions.get(id);
     if (!s) return false;

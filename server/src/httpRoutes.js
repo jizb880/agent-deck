@@ -56,6 +56,15 @@ export function registerRoutes(app) {
     return s.toJSON();
   });
 
+  // Rename a session (title shows in the sidebar and tab headers).
+  app.patch('/api/sessions/:id', async (req, reply) => {
+    const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
+    if (!title) return reply.code(400).send({ error: 'title must be a non-empty string' });
+    const s = sessionManager.rename(req.params.id, title.slice(0, 80));
+    if (!s) return reply.code(404).send({ error: 'Session not found' });
+    return s.toJSON();
+  });
+
   // Send a signal (default SIGTERM) to the CLI without removing the session.
   app.post('/api/sessions/:id/kill', async (req, reply) => {
     const signal = (req.body && req.body.signal) || 'SIGTERM';

@@ -111,6 +111,16 @@ export default function App() {
     [closeTab]
   );
 
+  // Rename a session: optimistic local update, then persist; the WS roster
+  // broadcast reconciles authoritative state for every client (sidebar + tabs).
+  const handleRename = useCallback((id, title) => {
+    setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, title } : s)));
+    api.renameSession(id, title).catch((e) => {
+      setToast(String(e.message || e));
+      wsClient.requestList(); // roll back to server state
+    });
+  }, []);
+
   // Drop tabs whose session vanished from the roster.
   useEffect(() => {
     const live = new Set(sessions.map((s) => s.id));
@@ -166,6 +176,7 @@ export default function App() {
         onOpenSession={openSession}
         onKillSession={closeSession}
         onRemoveSession={handleRemove}
+        onRenameSession={handleRename}
         onReorderSession={reorderSessions}
         onNewPersona={() => setEditingPersona('new')}
         onEditPersona={(p) => setEditingPersona(p)}
