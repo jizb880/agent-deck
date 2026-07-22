@@ -2,20 +2,87 @@
 
 **English** | [简体中文](./README.zh-CN.md)
 
-A local web dashboard for running and orchestrating **multiple AI coding agent CLIs (`claude` / `opencode`) and plain shell terminals side by side**: real PTY terminals, session persistence (processes keep running across browser refreshes and can be re-attached), one-click persona presets, and a sidebar + tabs / split-pane layout.
+A local web dashboard for running multiple AI coding agent CLIs (`claude` / `opencode`) and plain shell terminals side by side. Real PTY terminals, sessions survive browser refreshes, one-click persona presets, tabs / split-pane layout.
 
----
+## Install
+
+**Requirements**
+
+- macOS / Linux (Windows: use WSL)
+- Node.js ≥ 18
+- C/C++ toolchain for `node-pty` (macOS: `xcode-select --install`; Linux: `build-essential` + `python3`)
+- `claude` and/or `opencode` CLI installed, logged in, and on your PATH
+
+**Setup**
+
+```bash
+npm run setup
+```
+
+Installs `server/` and `web/` dependencies, fixes node-pty's `spawn-helper` executable bit, and builds the frontend.
+
+**Run**
+
+```bash
+# Production: single port serves UI + WebSocket
+./scripts/start.sh          # http://127.0.0.1:4173
+
+# Dev: Vite HMR + backend hot reload
+npm run dev                 # http://127.0.0.1:5173
+```
+
+Environment variables: `PORT` (default 4173), `HOST` (default 127.0.0.1), `SCROLLBACK_BYTES`, `IDLE_AFTER_MS`, `CONTROL_APP_DATA` (directory for personas.json), `REAP_EXITED_AFTER_MS`.
+
+## Uninstall
+
+Nothing is installed globally — everything lives inside this directory.
+
+```bash
+# Stop the server (Ctrl-C, or kill the process holding the port)
+lsof -ti tcp:4173 -sTCP:LISTEN | xargs kill
+
+# Delete the repo (persona data is in data/personas.json, or $CONTROL_APP_DATA if set)
+rm -rf /path/to/control_app
+```
 
 ## Features
 
-- **Multiple CLI instances** — `xterm.js` (frontend) + `node-pty` (backend) + WebSocket for real-time bidirectional I/O, with full ANSI color and interactive TUI support.
-- **Process persistence / re-attach** — every PTY session is hosted by the long-running backend and keeps 1 MiB of scrollback; after a browser refresh or disconnect the frontend re-attaches and replays the full terminal history.
-- **Personas** — configure and save presets (e.g. Refactor Expert / Security Auditor / Doc Writer) with system prompt, model, working directory, env vars and extra args; launch them with one click from the Quick Launch area.
-- **Plain terminals** — the "+ 终端" button opens your login shell as a tab, right next to the agent sessions.
-- **Session board** — the sidebar shows live status for every session (starting / running / busy / idle / exited) and its kind; the main area supports tabs or resizable split panes with live terminal resize.
-- **Per-session workspace** — each session can target a different local project directory.
+- **Multiple CLI instances** — `xterm.js` + `node-pty` + WebSocket; full ANSI color and interactive TUI support.
+- **Session persistence** — PTYs are hosted by the backend with 1 MiB scrollback; refresh/disconnect, then re-attach and replay full history. (A backend restart ends sessions — see "Advanced".)
+- **Personas** — save presets (system prompt, model, working dir, env vars, extra args) and launch them with one click.
+- **Plain terminals** — open your login shell as a tab next to agent sessions.
+- **Session board** — live status per session (starting / running / busy / idle / exited); tabs or resizable split panes with live terminal resize.
+- **Per-session workspace** — each session can target a different project directory.
 
----
+## Usage
+
+1. **Quick Launch** (sidebar): open a bare `claude` / `opencode` session, click a persona chip, or hit **+ 终端** for a plain shell tab.
+2. The launch dialog lets you override working dir / model / title.
+3. Switch the main area between **Tabs** and **Split**; drag split handles to resize live.
+4. Sidebar **停止** and the tab's **×** both terminate the CLI and close the tab. Exited sessions linger briefly, then are auto-reaped.
+5. Refreshing the browser never interrupts sessions.
+
+### Persona → CLI flag mapping
+
+| Field | Claude Code | OpenCode |
+|---|---|---|
+| Working dir (cwd) | process cwd | process cwd (project dir) |
+| Model | `--model` | `--model provider/model` |
+| Agent | `--agent` | `--agent` |
+| System prompt | `--append-system-prompt` | `--append-system-prompt` (ignored if unsupported) |
+| Extra dirs (addDirs) | `--add-dir` (each) | — |
+| Env vars | injected into process env | injected into process env |
+| Extra args | appended verbatim | appended verbatim |
+
+Personas are stored in `data/personas.json`; three examples are seeded on first start.
+
+## Troubleshooting: node-pty `posix_spawnp failed`
+
+On some macOS + recent-npm combinations, node-pty's `spawn-helper` is installed non-executable, and `pty.spawn()` throws `Error: posix_spawnp failed`. `setup.sh` / `start.sh` fix this automatically (`server/scripts/fix-node-pty.js`). Manual fix:
+
+```bash
+chmod +x server/node_modules/node-pty/prebuilds/<platform>/spawn-helper
+```
 
 ## Architecture
 
@@ -28,105 +95,27 @@ Node backend (Fastify + ws + node-pty)
   ├── httpRoutes ── personaStore (JSON persistence) ── launcher (persona → argv/env/cwd)
   └── wsBridge ──── SessionManager ── PtySession { node-pty child + 1MiB scrollback ring }
         │
-   claude CLI / opencode CLI / login shell  (real interactive TUIs)
+   claude CLI / opencode CLI / login shell
 ```
 
-**Key design points**
-
-1. **Persistence model** — PTYs are children of the long-running backend, each with its own scrollback buffer. Refreshing or closing the browser leaves the child running; on reconnect the frontend re-attaches, the backend replays the buffer, and xterm redraws the full history. A **backend restart** ends the children (in-memory registry); see "Advanced" below if you need survival across backend restarts.
-2. **Launch strategy** — `bash -lc 'exec <cli> …'`. The login shell loads the user's PATH (so globally installed `claude` / `opencode` resolve), and `exec` makes the PTY *become* the CLI, so signals / resize / Ctrl-C pass straight through. All persona values are POSIX single-quoted to rule out command injection. Plain terminals spawn your `$SHELL -l` directly.
-3. **Live resize** — the frontend combines `ResizeObserver` + `xterm-addon-fit` to compute cols/rows and syncs them to `node-pty` over WS `resize` frames, so tab switches and split-pane drags apply instantly.
-
----
-
-## Install
-
-### Platform support
-
-- **macOS / Linux** — supported.
-- **Windows** — not supported natively: sessions are launched through `/bin/bash -lc` with POSIX quoting, plain terminals use `$SHELL`, and the helper scripts are bash. Run it inside **WSL** instead (everything works there as on Linux).
-
-### Prerequisites
-
-- **Node.js ≥ 18**.
-- A C/C++ toolchain for `node-pty`'s native module (macOS: `xcode-select --install`; Linux: `build-essential` / `python3`).
-- `claude` and/or `opencode` CLIs installed, logged in, and on your PATH (only needed for the kinds you plan to launch).
-
-### One-shot setup
-
-```bash
-npm run setup
-```
-
-`setup` installs `server/` and `web/` dependencies → **fixes the executable bit on node-pty's `spawn-helper`** (see "Important" below) → builds the frontend into `web/dist`.
-
-### Run
-
-```bash
-# Production mode: the backend serves the UI and WebSocket on a single port
-./scripts/start.sh
-# open http://127.0.0.1:4173
-
-# Dev mode: Vite HMR + backend hot reload (Vite proxies /api and /ws)
-npm run dev
-# open http://127.0.0.1:5173
-```
-
-Environment variables: `PORT` (default 4173), `HOST` (default 127.0.0.1), `SCROLLBACK_BYTES`, `IDLE_AFTER_MS`, `CONTROL_APP_DATA` (directory for personas.json).
-
----
-
-## ⚠️ Important: node-pty pitfall (auto-fixed)
-
-With some macOS + recent-npm combinations, `node-pty` installs a prebuilt binary but leaves `spawn-helper` **non-executable** (`-rw-r--r--`), making `pty.spawn()` throw `Error: posix_spawnp failed`; recent npm versions may also skip node-pty's postinstall script by default.
-
-This repo ships a fix: `server/scripts/fix-node-pty.js` (runs as the server's postinstall and is re-run idempotently by `setup.sh` / `start.sh`). The essence:
-
-```bash
-chmod +x server/node_modules/node-pty/prebuilds/<platform>/spawn-helper
-# e.g. darwin-x64 or darwin-arm64
-```
-
-If you still hit `posix_spawnp failed` elsewhere, run that line manually.
-
----
-
-## Usage
-
-1. **Quick Launch** (sidebar): open a bare `claude` / `opencode` session, click a **persona chip** to launch with that preset, or hit **+ 终端** for a plain shell tab.
-2. The launch dialog lets you override working dir / model / title before spawning.
-3. Switch the main area between **Tabs** and **Split** at the top; drag the split handles to resize terminals live.
-4. The sidebar **Sessions** list shows live status. The sidebar **停止** button and the tab's **×** both do the same thing: terminate the CLI and close its tab. Exited sessions linger briefly (readable final output), can be removed manually, and are auto-reaped.
-5. **Refreshing the browser** never interrupts sessions — reopen a tab to restore full history.
-
-### Persona → CLI flag mapping
-
-| Field | Claude Code | OpenCode |
-|---|---|---|
-| Working dir (cwd) | process cwd | process cwd (project dir) |
-| Model | `--model` | `--model provider/model` |
-| Agent | `--agent` | `--agent` |
-| System prompt | `--append-system-prompt` | via `--append-system-prompt` (ignored if unsupported) |
-| Extra dirs (addDirs) | `--add-dir` (each) | — |
-| Env vars | injected into process env | injected into process env |
-| Extra args | appended verbatim | appended verbatim |
-
-> Personas are stored in `data/personas.json`; three example personas are seeded on first start.
-
----
+- **Persistence** — PTYs are children of the long-running backend, each with a scrollback buffer replayed on re-attach. A backend restart ends them (in-memory registry).
+- **Launch** — `bash -lc 'exec <cli> …'`: the login shell loads your PATH, `exec` makes the PTY *become* the CLI so signals / resize pass straight through. All persona values are POSIX single-quoted. Plain terminals spawn `$SHELL -l`.
+- **Live resize** — `ResizeObserver` + `xterm-addon-fit` compute cols/rows and sync them to `node-pty` over WS `resize` frames.
 
 ## Advanced: surviving backend restarts
 
-Sessions live in the backend's memory, so restarting the backend ends the child CLIs. For stronger persistence, wrap the launch command in a re-attachable multiplexer:
+Wrap the launch command in a re-attachable multiplexer (requires `tmux` or `dtach`):
 
 ```js
 // in launcher.js change commandLine to:
 // exec tmux new-session -A -s deck_<id> "<original command>"
 ```
 
-Then after a backend restart you can still `tmux attach` to the session (requires `tmux` or `dtach`). Optional enhancement, not part of the default path.
+## Security notes
 
----
+- Binds to `127.0.0.1` only, **no authentication** — this is a local developer tool. Anyone who can reach the port can run commands as you; if exposing over the network, put an authenticating reverse proxy in front.
+- Persona values are POSIX single-quoted before embedding in `bash -lc`; persona `env` filters keys that could execute code early (`BASH_ENV` / `ENV` / `BASH_FUNC_*` / `LD_PRELOAD` / `DYLD_*` / `PROMPT_COMMAND`). `extraArgs` remain operator-trusted input.
+- Exited sessions are reaped after a grace period (`REAP_EXITED_AFTER_MS`, default 5 min); slow WebSocket clients trigger backpressure (the backend pauses reading from that PTY) instead of unbounded buffering.
 
 ## Repository layout
 
@@ -141,11 +130,3 @@ agent-deck/
 └── web/                    # frontend (React + Vite + xterm.js)
     └── src/{App,Sidebar,TerminalGrid,TerminalView,LaunchDialog,PersonaEditor,wsClient,api}.jsx|js
 ```
-
-## Security notes
-
-- Binds to `127.0.0.1` only by default, with **no authentication** — this is a local developer tool. If you bind to `0.0.0.0` or expose it over the network, put a reverse proxy with auth in front; anyone who can reach the port can run CLI commands as you on your machine.
-- All persona values are POSIX single-quoted before being embedded in `bash -lc`, preventing command injection.
-- Persona `env` filters out keys that would let a non-interactive `bash -lc` execute code early (`BASH_ENV` / `ENV` / `BASH_FUNC_*` / `LD_PRELOAD` / `DYLD_*` / `PROMPT_COMMAND`), so env vars can't bypass the "can only launch a CLI" boundary. `extraArgs` remain operator-trusted input — don't paste untrusted content there.
-- Exited sessions are kept for a grace period (default 5 minutes, tune with `REAP_EXITED_AFTER_MS`) so a client can still read final output / exit code, then auto-reaped to free their scrollback and keep memory bounded under session churn.
-- Slow clients trigger backpressure: when a WebSocket send buffer exceeds a threshold the backend pauses reading from that PTY (the kernel pipe throttles naturally) instead of buffering output unboundedly in Node.
