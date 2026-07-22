@@ -28,14 +28,24 @@ body {
 
 /* ---------- Sidebar ---------- */
 .sidebar {
-  width: 300px;
-  min-width: 300px;
+  width: var(--sidebar-width, 300px);
+  flex: 0 0 auto;
   background: var(--panel);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
+
+/* Drag handle between sidebar and main pane (double-click resets width). */
+.sidebar-resizer {
+  flex: 0 0 5px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+}
+.sidebar-resizer:hover,
+.sidebar-resizer.active { background: var(--accent); }
 .sidebar-header { padding: 14px 16px; border-bottom: 1px solid var(--border); }
 .logo { font-weight: 700; font-size: 15px; }
 .sidebar-header .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }

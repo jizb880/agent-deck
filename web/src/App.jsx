@@ -1,4 +1,10 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
+
+// Sidebar resize bounds (px). Width persists across reloads via localStorage.
+const SIDEBAR_MIN = 200;
+const SIDEBAR_MAX = 560;
+const SIDEBAR_DEFAULT = 300;
+const clampSidebar = (w) => Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, w));
 import { api } from './api.js';
 import { wsClient } from './wsClient.js';
 import Sidebar from './Sidebar.jsx';
@@ -25,6 +31,46 @@ export default function App() {
   const [launch, setLaunch] = useState(null); // { persona } | { kind } | true
   const [editingPersona, setEditingPersona] = useState(null); // persona | 'new' | null
   const [toast, setToast] = useState(null);
+
+  // Sidebar width: draggable via the divider between sidebar and main pane.
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = Number(localStorage.getItem('sidebarWidth'));
+    return Number.isFinite(saved) && saved > 0 ? clampSidebar(saved) : SIDEBAR_DEFAULT;
+  });
+  const [resizingSidebar, setResizingSidebar] = useState(false);
+
+  const startSidebarResize = useCallback(
+    (e) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = sidebarWidth;
+      let latest = startW;
+      setResizingSidebar(true);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      const onMove = (ev) => {
+        latest = clampSidebar(startW + ev.clientX - startX);
+        setSidebarWidth(latest);
+      };
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        setResizingSidebar(false);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        localStorage.setItem('sidebarWidth', String(latest));
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    },
+    [sidebarWidth]
+  );
+
+  // Double-click the divider to reset to the default width.
+  const resetSidebarWidth = useCallback(() => {
+    setSidebarWidth(SIDEBAR_DEFAULT);
+    localStorage.setItem('sidebarWidth', String(SIDEBAR_DEFAULT));
+  }, []);
 
   const refreshPersonas = useCallback(async () => {
     setPersonas(await api.listPersonas());
@@ -164,7 +210,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="app">
+    <div className="app" style={{ '--sidebar-width': `${sidebarWidth}px` }}>
       <Sidebar
         personas={personas}
         sessions={orderedSessions}
@@ -180,6 +226,13 @@ export default function App() {
         onReorderSession={reorderSessions}
         onNewPersona={() => setEditingPersona('new')}
         onEditPersona={(p) => setEditingPersona(p)}
+      />
+
+      <div
+        className={resizingSidebar ? 'sidebar-resizer active' : 'sidebar-resizer'}
+        onPointerDown={startSidebarResize}
+        onDoubleClick={resetSidebarWidth}
+        title="拖拽调节侧栏宽度（双击复位）"
       />
 
       <main className="main">
