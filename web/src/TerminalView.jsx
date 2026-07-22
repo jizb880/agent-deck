@@ -66,6 +66,11 @@ export default function TerminalView({ sessionId, active }) {
       try {
         fit.fit();
         wsClient.resize(sessionId, term.cols, term.rows);
+        // Reflow can leave the viewport stuck above the bottom; TUIs like
+        // Claude Code redraw in place (no new scroll), so it never snaps
+        // back on its own and the prompt stays hidden. Snap explicitly —
+        // standard terminal behavior on resize.
+        term.scrollToBottom();
         return true;
       } catch {
         return false;
@@ -96,7 +101,9 @@ export default function TerminalView({ sessionId, active }) {
       switch (frame.type) {
         case 'attached':
           term.reset();
-          if (frame.snapshot) term.write(frame.snapshot);
+          // write() is async — scroll to bottom once the snapshot is rendered
+          // so the replayed prompt/input box is in view.
+          if (frame.snapshot) term.write(frame.snapshot, () => term.scrollToBottom());
           requestAnimationFrame(tryFit);
           break;
         case 'output':
@@ -139,6 +146,7 @@ export default function TerminalView({ sessionId, active }) {
         fitRef.current?.fit();
         if (termRef.current) {
           wsClient.resize(sessionId, termRef.current.cols, termRef.current.rows);
+          termRef.current.scrollToBottom();
           termRef.current.focus();
         }
       } catch {
