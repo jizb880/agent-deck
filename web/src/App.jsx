@@ -137,15 +137,30 @@ export default function App() {
     }
   }, [handleCreate]);
 
-  // Sidebar「停止」and the tab's × both mean "close this terminal":
-  // terminate the CLI (SIGTERM) and close its tab. The session lingers in the
-  // sidebar as 已退出 (removable / auto-reaped) so final output stays readable.
+  // Sidebar「停止」: terminate the CLI (SIGTERM) and close its tab. The session
+  // lingers in the sidebar as 已退出 (removable / auto-reaped) so final output
+  // stays readable.
   const closeSession = useCallback(
     (id) => {
       api.killSession(id, 'SIGTERM').catch(() => {});
       closeTab(id);
     },
     [closeTab]
+  );
+
+  // Tab × in the grid: plain terminals die with their tab, but Claude Code /
+  // OpenCode sessions keep running — closing the tab just detaches the view;
+  // the session stays live in the sidebar and can be reopened.
+  const handleTabClose = useCallback(
+    (id) => {
+      const s = sessions.find((x) => x.id === id);
+      if (!s || s.kind === 'terminal') {
+        closeSession(id);
+      } else {
+        closeTab(id);
+      }
+    },
+    [sessions, closeSession, closeTab]
   );
 
   const handleRemove = useCallback(
@@ -263,7 +278,7 @@ export default function App() {
           sessions={sessions}
           layout={layout}
           onActivate={setActiveId}
-          onCloseTab={closeSession}
+          onCloseTab={handleTabClose}
           onReorderTab={reorderTabs}
         />
       </main>
