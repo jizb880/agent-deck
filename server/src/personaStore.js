@@ -20,13 +20,13 @@ const DEFAULT_PERSONAS = [
     color: '#7c9cff',
   },
   {
-    id: 'security-auditor',
-    name: '安全审计员 (Security Auditor)',
-    kind: 'opencode',
+    id: 'dev-expert',
+    name: '开发专家 (Dev Expert)',
+    kind: 'claude',
     model: '',
     agent: '',
     appendSystemPrompt:
-      'You are a defensive security auditor. Look for injection, authz gaps, unsafe deserialization, and secret leakage. Never write exploit payloads; propose fixes.',
+      'You are a senior full-stack development expert. Write clean, idiomatic, well-tested code. Prefer simple, maintainable solutions; explain key design decisions briefly and verify changes by running the relevant tests or the app.',
     cwd: '',
     addDirs: [],
     env: {},

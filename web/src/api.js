@@ -29,6 +29,7 @@ export const api = {
 
   listSessions: () => req('GET', '/api/sessions'),
   createSession: (s) => req('POST', '/api/sessions', s),
+  renameSession: (id, title) => req('PATCH', `/api/sessions/${id}`, { title }),
   killSession: (id, signal) => req('POST', `/api/sessions/${id}/kill`, { signal }),
   removeSession: (id) => req('DELETE', `/api/sessions/${id}`),
 };
