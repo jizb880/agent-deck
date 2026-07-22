@@ -9,6 +9,32 @@ const STATUS_LABEL = {
   exited: '已退出',
 };
 
+// Copy text to the clipboard. navigator.clipboard requires a secure context
+// (https/localhost); fall back to the execCommand trick for plain-http LAN use.
+async function copyText(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fall through to legacy path */
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 function SessionRow({
   session,
   active,
@@ -26,6 +52,19 @@ function SessionRow({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(session.title);
   const inputRef = useRef(null);
+
+  // Click the cwd line to copy the path; brief ✓ feedback.
+  const [copied, setCopied] = useState(false);
+  const copyTimer = useRef(null);
+  useEffect(() => () => clearTimeout(copyTimer.current), []);
+  const copyCwd = async (e) => {
+    e.stopPropagation();
+    if (await copyText(session.cwd || '')) {
+      setCopied(true);
+      clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 1200);
+    }
+  };
 
   useEffect(() => {
     if (editing && inputRef.current) {
@@ -89,8 +128,12 @@ function SessionRow({
           <span className={`kind-badge ${session.kind}`}>{KIND_LABEL[session.kind]}</span>
           <span className="status-text">{STATUS_LABEL[session.status] || session.status}</span>
         </div>
-        <div className="sess-cwd" title={session.cwd}>
-          {session.cwd}
+        <div
+          className={`sess-cwd${copied ? ' copied' : ''}`}
+          title={`点击复制路径\n${session.cwd}`}
+          onClick={copyCwd}
+        >
+          {copied ? '✓ 已复制路径' : session.cwd}
         </div>
       </div>
       <div className="sess-actions" onClick={(e) => e.stopPropagation()}>
