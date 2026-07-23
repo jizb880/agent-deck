@@ -18,7 +18,7 @@ const LIGHT_THEME = {
   blue: '#0969da',
   magenta: '#8250df',
   cyan: '#1b7c83',
-  white: '#6e7781',
+  white: '#57606a',
   brightBlack: '#57606a',
   brightRed: '#a40e26',
   brightGreen: '#1a7f37',
@@ -26,7 +26,7 @@ const LIGHT_THEME = {
   brightBlue: '#218bff',
   brightMagenta: '#a475f9',
   brightCyan: '#3192aa',
-  brightWhite: '#8c959f',
+  brightWhite: '#424a53',
 };
 
 /**
@@ -50,6 +50,10 @@ export default function TerminalView({ sessionId, active }) {
       cursorBlink: true,
       scrollback: 10000,
       allowProposedApi: true,
+      // Claude Code emits dim/gray truecolor text (thinking, hints, streamed
+      // status) that the theme palette can't remap; force WCAG-AA legibility
+      // against the white background instead.
+      minimumContrastRatio: 4.5,
       theme: LIGHT_THEME,
     });
     const fit = new FitAddon();
