@@ -41,6 +41,11 @@ export default function TerminalView({ sessionId, active }) {
   const fitRef = useRef(null);
   const detachRef = useRef(null);
   const roRef = useRef(null);
+  // Follow-the-bottom mode: true unless the user deliberately scrolled up.
+  // Deciding by intent (wheel up = leave, back at bottom = rejoin) instead of
+  // by current position is what lets us recover a viewport that a reflow or
+  // in-place TUI redraw stranded above the bottom.
+  const followRef = useRef(true);
 
   useEffect(() => {
     const term = new Terminal({
@@ -73,17 +78,23 @@ export default function TerminalView({ sessionId, active }) {
         // Reflow can leave the viewport stuck above the bottom; TUIs like
         // Claude Code redraw in place (no new scroll), so it never snaps
         // back on its own and the prompt stays hidden. Snap explicitly —
-        // standard terminal behavior on resize.
-        term.scrollToBottom();
+        // unless the user deliberately scrolled up to read scrollback.
+        if (followRef.current) term.scrollToBottom();
         return true;
       } catch {
         return false;
       }
     };
-    let tries = 0;
+    // Retry across a few frames until the host has real dimensions. Each
+    // schedule gets its own counter so later triggers (focus, resize) still
+    // retry even after an earlier burst exhausted its attempts.
     const tryFit = () => {
-      if (fitNow() || tries++ > 40) return;
-      requestAnimationFrame(tryFit);
+      let tries = 0;
+      const attempt = () => {
+        if (fitNow() || tries++ > 40) return;
+        requestAnimationFrame(attempt);
+      };
+      attempt();
     };
 
     // Compute an initial size for the attach (falls back to 80x24).
@@ -101,17 +112,33 @@ export default function TerminalView({ sessionId, active }) {
 
     term.onData((data) => wsClient.input(sessionId, data));
 
+    // Leave follow mode only on a deliberate upward scroll; rejoin whenever
+    // the viewport is back at the bottom (wheel, scrollbar, or programmatic).
+    const onWheel = (e) => {
+      if (e.deltaY < 0) followRef.current = false;
+    };
+    hostRef.current.addEventListener('wheel', onWheel, { passive: true });
+    term.onScroll(() => {
+      const buf = term.buffer.active;
+      if (buf.viewportY >= buf.baseY) followRef.current = true;
+    });
+
     const handler = (frame) => {
       switch (frame.type) {
         case 'attached':
           term.reset();
+          followRef.current = true;
           // write() is async — scroll to bottom once the snapshot is rendered
           // so the replayed prompt/input box is in view.
           if (frame.snapshot) term.write(frame.snapshot, () => term.scrollToBottom());
           requestAnimationFrame(tryFit);
           break;
         case 'output':
-          term.write(frame.data);
+          // Keep the viewport pinned while output streams. Claude Code
+          // redraws via scroll regions / in-place updates that don't always
+          // trigger xterm's own auto-scroll, and a reflow can strand the
+          // viewport above the bottom — follow mode drags it back.
+          term.write(frame.data, followRef.current ? () => term.scrollToBottom() : undefined);
           break;
         case 'error':
           term.write(`\r\n\x1b[31m[${frame.message || 'error'}]\x1b[0m\r\n`);
@@ -134,7 +161,19 @@ export default function TerminalView({ sessionId, active }) {
     roRef.current = ro;
     requestAnimationFrame(tryFit);
 
+    // Re-fit when the window regains focus/visibility — the same recovery a
+    // tab switch performs, without requiring one. Covers viewport desyncs
+    // that accumulate while the page is backgrounded.
+    const onWindowActive = () => tryFit();
+    window.addEventListener('focus', onWindowActive);
+    document.addEventListener('visibilitychange', onWindowActive);
+    // Late font loads change cell metrics; re-fit once fonts settle.
+    if (document.fonts?.ready) document.fonts.ready.then(onWindowActive).catch(() => {});
+
     return () => {
+      window.removeEventListener('focus', onWindowActive);
+      document.removeEventListener('visibilitychange', onWindowActive);
+      hostRef.current?.removeEventListener('wheel', onWheel);
       if (roRef.current) roRef.current.disconnect();
       if (detachRef.current) detachRef.current();
       term.dispose();
@@ -150,7 +189,7 @@ export default function TerminalView({ sessionId, active }) {
         fitRef.current?.fit();
         if (termRef.current) {
           wsClient.resize(sessionId, termRef.current.cols, termRef.current.rows);
-          termRef.current.scrollToBottom();
+          if (followRef.current) termRef.current.scrollToBottom();
           termRef.current.focus();
         }
       } catch {
