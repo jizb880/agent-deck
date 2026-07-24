@@ -48,12 +48,25 @@ export function buildLaunch(persona, overrides = {}) {
 
   const cwd = overrides.cwd || persona.cwd || HOME_DIR;
 
-  const env = safeEnvMerge(persona.env, overrides.env, {
-    // Help CLIs render rich TUIs inside the PTY.
-    TERM: 'xterm-256color',
-    COLORTERM: 'truecolor',
-    FORCE_COLOR: '3',
-  });
+  const env = safeEnvMerge(
+    kind === 'claude'
+      ? {
+          // Third-party relays (ANTHROPIC_BASE_URL proxies) reject beta request
+          // fields like `context_management` with "429 ... Extra inputs are not
+          // permitted". Disable experimental betas by default; a persona env
+          // entry can override this back to 0 for the official endpoint.
+          CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: '1',
+        }
+      : null,
+    persona.env,
+    overrides.env,
+    {
+      // Help CLIs render rich TUIs inside the PTY.
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
+      FORCE_COLOR: '3',
+    }
+  );
 
   // Plain terminal: spawn the user's own login shell interactively — no CLI,
   // no persona flags. The PTY dies when the shell exits.
