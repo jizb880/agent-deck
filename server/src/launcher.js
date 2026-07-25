@@ -67,6 +67,11 @@ export function buildLaunch(persona, overrides = {}) {
     TERM: 'xterm-256color',
     COLORTERM: 'truecolor',
     FORCE_COLOR: '3',
+    // The web terminal renders on a white background, but a PTY gives TUIs no
+    // way to discover that — Claude Code etc. assume a dark theme and paint
+    // select-menu highlights in colors that vanish on white. COLORFGBG is the
+    // standard hint: "0;15" = black-on-white (light background).
+    COLORFGBG: '0;15',
   });
 
   // Third-party relays (ANTHROPIC_BASE_URL proxies) reject beta request fields

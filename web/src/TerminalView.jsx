@@ -23,9 +23,12 @@ const LIGHT_THEME = {
   brightRed: '#a40e26',
   brightGreen: '#1a7f37',
   brightYellow: '#633c01',
-  brightBlue: '#218bff',
-  brightMagenta: '#a475f9',
-  brightCyan: '#3192aa',
+  // Bright accents darkened for the white bg: TUIs designed for dark
+  // terminals (Claude Code select menus, pointers) lean on these, and the
+  // stock GitHub-light values sit near 3:1 contrast — nearly invisible.
+  brightBlue: '#0550ae',
+  brightMagenta: '#6639ba',
+  brightCyan: '#1b7c83',
   brightWhite: '#424a53',
 };
 
@@ -56,9 +59,10 @@ export default function TerminalView({ sessionId, active }) {
       scrollback: 10000,
       allowProposedApi: true,
       // Claude Code emits dim/gray truecolor text (thinking, hints, streamed
-      // status) that the theme palette can't remap; force WCAG-AA legibility
-      // against the white background instead.
-      minimumContrastRatio: 4.5,
+      // status) and paints its select-menu highlight/pointer with dark-theme
+      // colors the palette can't remap; 4.5 (AA) still left the selection
+      // cursor hard to spot on white, so force AAA-level contrast.
+      minimumContrastRatio: 7,
       theme: LIGHT_THEME,
     });
     const fit = new FitAddon();
