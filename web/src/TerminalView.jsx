@@ -117,14 +117,21 @@ export default function TerminalView({ sessionId, active }) {
     term.onData((data) => wsClient.input(sessionId, data));
 
     // Leave follow mode only on a deliberate upward scroll; rejoin whenever
-    // the viewport is back at the bottom (wheel, scrollbar, or programmatic).
+    // the viewport comes back near the bottom (wheel, scrollbar, or scroll).
     const onWheel = (e) => {
       if (e.deltaY < 0) followRef.current = false;
     };
     hostRef.current.addEventListener('wheel', onWheel, { passive: true });
+    // Rejoin within a few rows of the bottom rather than at exact equality.
+    // While output streams, each new line pushes baseY down faster than a
+    // manual scroll can land on it, so viewportY === baseY is essentially
+    // never hit — the user chases a bottom that keeps moving and can "never
+    // reach it." A small threshold lets a downward scroll re-engage follow
+    // mode mid-stream, after which scrollToBottom keeps it pinned.
+    const REJOIN_ROWS = 3;
     term.onScroll(() => {
       const buf = term.buffer.active;
-      if (buf.viewportY >= buf.baseY) followRef.current = true;
+      if (buf.baseY - buf.viewportY <= REJOIN_ROWS) followRef.current = true;
     });
 
     const handler = (frame) => {
