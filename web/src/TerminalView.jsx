@@ -44,6 +44,12 @@ export default function TerminalView({ sessionId, active }) {
   const fitRef = useRef(null);
   const detachRef = useRef(null);
   const roRef = useRef(null);
+  // Exposed so the "tab became active" effect can reuse the same retry-based
+  // refit the mount path uses, instead of a single fit that silently fails if
+  // layout hasn't settled yet.
+  const tryFitRef = useRef(null);
+  // Forces xterm to rebuild a scroll extent that went stale while hidden.
+  const resyncRef = useRef(null);
   // Follow-the-bottom mode: true unless the user deliberately scrolled up.
   // Deciding by intent (wheel up = leave, back at bottom = rejoin) instead of
   // by current position is what lets us recover a viewport that a reflow or
@@ -100,6 +106,38 @@ export default function TerminalView({ sessionId, active }) {
       };
       attempt();
     };
+    tryFitRef.current = tryFit;
+
+    // Last-resort recovery for a viewport whose scroll extent went stale.
+    // xterm only recomputes the scrollbar's extent when its dimensions
+    // change, and fit() is a no-op when cols/rows already match — so a pane
+    // that took output while it had no measurable size can end up with a
+    // scroll area shorter than its buffer, i.e. a scrollbar that cannot be
+    // dragged to the last row. Reloading the page was the only cure. Compare
+    // the rendered extent against the buffer and, if short, force one real
+    // resize so xterm rebuilds it.
+    const resyncIfStale = () => {
+      const el = hostRef.current;
+      if (!el || el.clientHeight === 0) return;
+      const viewport = el.querySelector('.xterm-viewport');
+      if (!viewport || viewport.clientHeight === 0) return;
+      const cols = term.cols;
+      const rows = term.rows;
+      // The viewport shows exactly `rows` rows, so this is the live cell height.
+      const cellH = viewport.clientHeight / Math.max(rows, 1);
+      const expected = term.buffer.active.length * cellH;
+      // Allow a row of slack for rounding.
+      if (viewport.scrollHeight >= expected - cellH) return;
+      try {
+        term.resize(cols, Math.max(rows - 1, 2));
+        term.resize(cols, rows);
+        wsClient.resize(sessionId, cols, rows);
+        if (followRef.current) term.scrollToBottom();
+      } catch {
+        /* ignore */
+      }
+    };
+    resyncRef.current = resyncIfStale;
 
     // Compute an initial size for the attach (falls back to 80x24).
     let cols = 80;
@@ -175,7 +213,10 @@ export default function TerminalView({ sessionId, active }) {
     // Re-fit when the window regains focus/visibility — the same recovery a
     // tab switch performs, without requiring one. Covers viewport desyncs
     // that accumulate while the page is backgrounded.
-    const onWindowActive = () => tryFit();
+    const onWindowActive = () => {
+      tryFit();
+      resyncIfStale();
+    };
     window.addEventListener('focus', onWindowActive);
     document.addEventListener('visibilitychange', onWindowActive);
     // Late font loads change cell metrics; re-fit once fonts settle.
@@ -192,22 +233,30 @@ export default function TerminalView({ sessionId, active }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
-  // Re-fit + focus when this tab becomes active (it may have been display:none).
+  // Re-fit, resync and focus when this tab becomes active. Inactive panes now
+  // stay laid out (visibility:hidden, not display:none) so geometry shouldn't
+  // go stale at all — but a tab switch is still the moment to repair anything
+  // that did drift, so the user never has to reload to reach the last row.
   useEffect(() => {
     if (!active) return;
-    const t = setTimeout(() => {
-      try {
-        fitRef.current?.fit();
-        if (termRef.current) {
-          wsClient.resize(sessionId, termRef.current.cols, termRef.current.rows);
-          if (followRef.current) termRef.current.scrollToBottom();
-          termRef.current.focus();
-        }
-      } catch {
-        /* ignore */
-      }
-    }, 40);
-    return () => clearTimeout(t);
+    let cancelled = false;
+    // Two rAFs: let the browser finish laying out / painting the newly visible
+    // pane before we measure, so the first fit attempt sees real dimensions.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        tryFitRef.current?.();
+        // fit() alone can't help when cols/rows are unchanged but the scroll
+        // extent is stale; this is what restores the ability to drag all the
+        // way to the last row after coming back to the tab.
+        resyncRef.current?.();
+        if (followRef.current) termRef.current?.scrollToBottom();
+        termRef.current?.focus();
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [active, sessionId]);
 
   return <div className="term-host" ref={hostRef} />;

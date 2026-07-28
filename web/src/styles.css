@@ -179,6 +179,14 @@ body {
 
 .tab-panes { flex: 1; min-height: 0; position: relative; }
 .tab-pane { position: absolute; inset: 0; padding: 6px; }
+/* Inactive panes are hidden without display:none. display:none collapses the
+   pane to zero size, which freezes xterm's measured cell/viewport metrics —
+   output that streams in while hidden then scrolls against stale geometry and
+   the scrollbar can end up unable to reach the last row until a page reload.
+   Keeping the pane laid out (just invisible and non-interactive) means every
+   terminal always has real dimensions, so switching back needs no recovery. */
+.tab-pane.inactive { visibility: hidden; pointer-events: none; z-index: 0; }
+.tab-pane.active { visibility: visible; z-index: 1; }
 .term-host { width: 100%; height: 100%; background: #ffffff; }
 
 /* split panes */

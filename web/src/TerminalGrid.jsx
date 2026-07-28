@@ -122,8 +122,7 @@ export default function TerminalGrid({
         {tabs.map((id) => (
           <div
             key={id}
-            className="tab-pane"
-            style={{ display: id === activeId ? 'block' : 'none' }}
+            className={`tab-pane ${id === activeId ? 'active' : 'inactive'}`}
           >
             <TerminalView sessionId={id} active={id === activeId} />
           </div>
