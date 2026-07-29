@@ -23,7 +23,17 @@ export class SessionManager extends EventEmitter {
     return this.sessions.get(id) || null;
   }
 
-  async create({ personaId, kind, cwd, model, agent, appendSystemPrompt, addDirs, title }) {
+  async create({
+    personaId,
+    kind,
+    cwd,
+    model,
+    agent,
+    appendSystemPrompt,
+    addDirs,
+    title,
+    resumeSessionId,
+  }) {
     let persona = { kind: kind || 'claude' };
     let resolvedName = null;
     if (personaId) {
@@ -33,7 +43,7 @@ export class SessionManager extends EventEmitter {
       resolvedName = p.name;
     }
 
-    const overrides = { kind, cwd, model, agent, appendSystemPrompt, addDirs };
+    const overrides = { kind, cwd, model, agent, appendSystemPrompt, addDirs, resumeSessionId };
     // Drop undefined so persona defaults win.
     for (const k of Object.keys(overrides)) {
       if (overrides[k] === undefined || overrides[k] === '') delete overrides[k];

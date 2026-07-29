@@ -64,6 +64,7 @@ rm -rf /path/to/control_app
 - **Multiple CLI instances** — `xterm.js` + `node-pty` + WebSocket; full ANSI color and interactive TUI support.
 - **Session persistence** — PTYs are hosted by the backend with 1 MiB scrollback; refresh/disconnect, then re-attach and replay full history. (A backend restart ends sessions — see "Advanced".)
 - **Personas** — save presets (system prompt, model, working dir, env vars, extra args) and launch them with one click.
+- **Resume past conversations** — when starting a Claude Code session, pick a previous conversation for that directory from a dropdown (newest first, with a preview of the opening prompt); leave it blank for a fresh session. Resumed via `--fork-session`, so the original transcript is never rewritten.
 - **Plain terminals** — open your login shell as a tab next to agent sessions.
 - **Session board** — live status per session (starting / running / busy / idle / exited); tabs or resizable split panes with live terminal resize.
 - **Per-session workspace** — each session can target a different project directory.
@@ -71,7 +72,7 @@ rm -rf /path/to/control_app
 ## Usage
 
 1. **Quick Launch** (sidebar): open a bare `claude` / `opencode` session, click a persona chip, or hit **+ 终端** for a plain shell tab.
-2. The launch dialog lets you override working dir / model / title.
+2. The launch dialog lets you override working dir / model / title, and pick a past conversation to resume (blank = new blank session).
 3. Switch the main area between **Tabs** and **Split**; drag split handles to resize live.
 4. Sidebar **停止** and the tab's **×** both terminate the CLI and close the tab. Exited sessions linger briefly, then are auto-reaped.
 5. Refreshing the browser never interrupts sessions.
@@ -89,6 +90,8 @@ rm -rf /path/to/control_app
 | Extra args | appended verbatim | appended verbatim |
 
 Personas are stored in `data/personas.json`; three examples are seeded on first start.
+
+Resume is deliberately *not* a persona field — it names one specific past conversation, so it is chosen per launch in the dialog and maps to `--resume <session-id> --fork-session` (Claude Code only). The dropdown reads Claude Code's own transcripts under `~/.claude/projects/` (override with `CLAUDE_PROJECTS_DIR`) and lists up to `RESUME_LIST_LIMIT` (default 30) entries for the selected working directory.
 
 ## Troubleshooting: node-pty `posix_spawnp failed`
 

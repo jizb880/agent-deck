@@ -27,6 +27,10 @@ export const api = {
   updatePersona: (id, p) => req('PUT', `/api/personas/${id}`, p),
   deletePersona: (id) => req('DELETE', `/api/personas/${id}`),
 
+  // Resumable Claude Code conversations recorded for a working directory.
+  listClaudeSessions: (cwd) =>
+    req('GET', `/api/claude-sessions?cwd=${encodeURIComponent(cwd || '')}`),
+
   listSessions: () => req('GET', '/api/sessions'),
   createSession: (s) => req('POST', '/api/sessions', s),
   renameSession: (id, title) => req('PATCH', `/api/sessions/${id}`, { title }),

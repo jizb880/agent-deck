@@ -225,6 +225,8 @@ body {
 
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
+/* Helper text under a form field (resume hints, "no history here"). */
+.field-hint { margin-top: 6px; line-height: 1.4; }
 
 /* Hidden holder for terminals that currently have no visible slot (inactive
    tab). They stay mounted & streaming; 0-size so they don't affect layout. */

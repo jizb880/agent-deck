@@ -33,6 +33,17 @@ export const KILL_ESCALATE_MS = Number(process.env.KILL_ESCALATE_MS || 1500);
 
 export const HOME_DIR = os.homedir();
 
+// Where Claude Code keeps per-project conversation transcripts, one dir per
+// working directory and one <session-id>.jsonl per session. Read-only for us:
+// it's the source for the "resume a previous session" picker.
+export const CLAUDE_PROJECTS_DIR =
+  process.env.CLAUDE_PROJECTS_DIR || path.join(HOME_DIR, '.claude', 'projects');
+
+// How many recent transcripts the resume picker offers. Each one costs a
+// bounded read to extract its preview, and a picker longer than this is not
+// useful to scroll anyway.
+export const RESUME_LIST_LIMIT = Number(process.env.RESUME_LIST_LIMIT || 30);
+
 // CLIs this dashboard knows how to launch. `bin` is resolved via a login
 // shell so the user's PATH (e.g. ~/.npm-global/bin) is honored. `terminal`
 // is special-cased in the launcher: it spawns the user's own login shell.

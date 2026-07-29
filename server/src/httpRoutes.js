@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { personaStore } from './personaStore.js';
 import { sessionManager } from './SessionManager.js';
 import { CLI_KINDS, HOME_DIR } from './config.js';
+import { listResumableSessions } from './claudeSessions.js';
 
 export function registerRoutes(app) {
   app.get('/api/health', async () => ({ ok: true, home: HOME_DIR }));
@@ -9,6 +10,19 @@ export function registerRoutes(app) {
   app.get('/api/cli-kinds', async () =>
     Object.entries(CLI_KINDS).map(([id, v]) => ({ id, label: v.label }))
   );
+
+  // Resumable Claude Code conversations for a working directory, newest first.
+  // Powers the launch dialog's resume picker; `cwd` defaults to $HOME to match
+  // what the launcher would use when the dialog leaves the field blank.
+  app.get('/api/claude-sessions', async (req) => {
+    // A repeated ?cwd= makes Fastify hand us an array; take the last value
+    // rather than silently falling back to $HOME and listing the wrong
+    // directory's history.
+    const raw = req.query?.cwd;
+    const value = Array.isArray(raw) ? raw[raw.length - 1] : raw;
+    const cwd = typeof value === 'string' && value ? value : HOME_DIR;
+    return listResumableSessions(cwd, app.log);
+  });
 
   // ---- Personas ----
   app.get('/api/personas', async () => personaStore.list());

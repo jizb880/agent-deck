@@ -1,4 +1,5 @@
 import { HOME_DIR, CLI_KINDS } from './config.js';
+import { normalizeSessionId } from './claudeSessions.js';
 
 // POSIX single-quote a value so persona-provided strings can never break out
 // of the argument and inject shell syntax. Empty string -> ''.
@@ -88,6 +89,16 @@ export function buildLaunch(persona, overrides = {}) {
     env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = '1';
   }
 
+  // Resume is per-launch only: it names one specific past conversation, which
+  // is never a property of a reusable persona. Only Claude Code supports it,
+  // and we reject rather than ignore: silently dropping the flag would answer
+  // "resume this conversation" with a 201 and a brand-new empty session.
+  // Checked before the `terminal` early return so that kind can't slip past.
+  const resumeSessionId = overrides.resumeSessionId;
+  if (resumeSessionId && kind !== 'claude') {
+    throw new Error(`Resuming a session is not supported for CLI kind: ${kind}`);
+  }
+
   // Plain terminal: spawn the user's own login shell interactively — no CLI,
   // no persona flags. The PTY dies when the shell exits.
   if (kind === 'terminal') {
@@ -112,6 +123,19 @@ export function buildLaunch(persona, overrides = {}) {
   const parts = [spec.bin];
 
   if (kind === 'claude') {
+    // Resume a stored conversation instead of starting empty. --fork-session
+    // gives the resumed run a fresh session id, so the original transcript is
+    // never appended to and the same history can be opened in several tabs
+    // without them fighting over one file.
+    if (resumeSessionId) {
+      // Emit the normalized id, not the raw one: a trailing newline from a
+      // paste would otherwise pass validation and reach the CLI inside the
+      // quotes, which `claude` rejects as an unknown session — the tab would
+      // spawn and die with no visible reason.
+      const id = normalizeSessionId(resumeSessionId);
+      if (!id) throw new Error(`Invalid resume session id: ${resumeSessionId}`);
+      parts.push('--resume', shellQuote(id), '--fork-session');
+    }
     if (model) parts.push('--model', shellQuote(model));
     if (agent) parts.push('--agent', shellQuote(agent));
     if (systemPrompt) parts.push('--append-system-prompt', shellQuote(systemPrompt));
