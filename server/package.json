@@ -8,7 +8,8 @@
   "scripts": {
     "start": "node scripts/fix-node-pty.js && node src/index.js",
     "dev": "node scripts/fix-node-pty.js && node --watch src/index.js",
-    "postinstall": "node scripts/fix-node-pty.js"
+    "postinstall": "node scripts/fix-node-pty.js",
+    "test": "node --experimental-test-module-mocks --test \"test/*.test.js\""
   },
   "dependencies": {
     "@fastify/static": "^7.0.4",

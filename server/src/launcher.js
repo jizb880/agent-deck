@@ -1,8 +1,22 @@
-import { HOME_DIR, CLI_KINDS } from './config.js';
+import { CLI_KINDS } from './config.js';
+import {
+  defaultShell,
+  findExecutable,
+  homeDir,
+  isWindows,
+  loginShellArgs,
+  posixLoginShell,
+} from './platform.js';
 import { normalizeSessionId } from './claudeSessions.js';
 
 // POSIX single-quote a value so persona-provided strings can never break out
 // of the argument and inject shell syntax. Empty string -> ''.
+//
+// Only ever used to build a POSIX `sh -c` command line. On Windows we don't
+// construct a command line at all — we hand node-pty an argv array and it
+// applies the Win32 CommandLineToArgvW escaping rules — because these POSIX
+// rules are not just wrong for cmd.exe/PowerShell, they'd be a no-op there
+// and would silently turn this quoting into an injection vector.
 export function shellQuote(value) {
   const s = String(value);
   if (s === '') return "''";
@@ -14,12 +28,17 @@ function asArray(v) {
   return Array.isArray(v) ? v : [v];
 }
 
-// Env vars that let a non-interactive `bash -lc` execute attacker-controlled
-// code *before* our `exec` runs (BASH_ENV/ENV are sourced as files; exported
-// bash functions run via BASH_FUNC_*). A persona is operator-supplied, but the
-// dashboard's whole safety story is "you can only launch a CLI", so we refuse
-// to let persona env smuggle in shell execution. Drop these defensively.
-const DANGEROUS_ENV = /^(BASH_ENV|ENV|BASH_FUNC_|LD_PRELOAD|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|PROMPT_COMMAND$)/;
+// Env vars that let a shell in the spawn chain execute attacker-controlled code
+// *before* our command runs: BASH_ENV/ENV are sourced as files, exported bash
+// functions run via BASH_FUNC_*, the loader vars preload libraries, and on
+// Windows COMSPEC/PATHEXT/PSModulePath redirect what actually gets executed.
+// A persona is operator-supplied, but the dashboard's whole safety story is
+// "you can only launch a CLI", so we refuse to let persona env smuggle in
+// execution. Matched case-insensitively: Windows env names are case-insensitive
+// (so `Bash_Env` would otherwise sail past a case-sensitive check) and a
+// case-only variant is never a legitimate value here on any platform.
+const DANGEROUS_ENV =
+  /^(BASH_ENV|ENV|BASH_FUNC_|LD_PRELOAD|LD_AUDIT|LD_LIBRARY_PATH|LD_ASSUME_KERNEL|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|DYLD_FRAMEWORK_PATH|PROMPT_COMMAND$|COMSPEC$|PATHEXT$|PSModulePath$|_NT_SYMBOL_PATH$)/i;
 
 function safeEnvMerge(...sources) {
   const out = { ...process.env };
@@ -49,22 +68,66 @@ function usesThirdPartyRelay(baseUrl) {
 }
 
 /**
+ * Build the CLI's argument vector (without the executable itself).
+ *
+ * Kept separate from the spawn mechanics because the two platforms consume it
+ * differently: Windows passes it through as argv, POSIX quotes each element
+ * into a `-lc` command string.
+ */
+function buildCliArgs(kind, { model, agent, systemPrompt, addDirs, extraArgs, resumeSessionId }) {
+  const args = [];
+  if (kind === 'claude') {
+    if (resumeSessionId) {
+      // Emit the normalized id, not the raw one: a trailing newline from a
+      // paste would otherwise pass validation and reach the CLI, which
+      // `claude` rejects as an unknown session — the tab would spawn and die
+      // with no visible reason. --fork-session keeps the original transcript
+      // intact so the same history can be opened in several tabs.
+      const id = normalizeSessionId(resumeSessionId);
+      if (!id) throw new Error(`Invalid resume session id: ${resumeSessionId}`);
+      args.push('--resume', id, '--fork-session');
+    }
+    if (model) args.push('--model', model);
+    if (agent) args.push('--agent', agent);
+    if (systemPrompt) args.push('--append-system-prompt', systemPrompt);
+    for (const d of addDirs) args.push('--add-dir', d);
+  } else if (kind === 'opencode') {
+    // opencode uses cwd for the project; model/agent are flags.
+    if (model) args.push('--model', model);
+    if (agent) args.push('--agent', agent);
+  }
+  // extraArgs are raw tokens supplied by the operator in the persona config.
+  for (const a of extraArgs) args.push(a);
+  return args;
+}
+
+/**
  * Turn a persona (+ per-launch overrides) into an executable plan for a PTY.
  *
- * Returns { kind, file, args, cwd, env, commandLine } where the PTY is spawned
- * as `bash -lc "exec <cli> <quoted flags>"`. Using a login shell ensures the
- * user's PATH is loaded; `exec` replaces the shell so signals / resize / Ctrl-C
- * flow straight to the CLI and the PTY dies exactly when the CLI does.
+ * Returns { kind, file, args, cwd, env, commandLine, label }.
+ *
+ * POSIX: spawned as `bash -lc "exec <cli> <quoted flags>"`. The login shell
+ * loads the user's PATH (a CLI installed to ~/.npm-global/bin is otherwise
+ * invisible), and `exec` replaces the shell so signals / resize / Ctrl-C flow
+ * straight to the CLI and the PTY dies exactly when the CLI does.
+ *
+ * Windows: the CLI is spawned directly with an argv array — no shell in the
+ * chain. There is no login-shell equivalent to load PATH, so the executable is
+ * resolved against PATH/PATHEXT here (npm installs `claude.cmd`), and letting
+ * node-pty do the Win32 escaping avoids inventing a cmd.exe/PowerShell quoting
+ * scheme, which is the classic source of command injection on that platform.
  */
 export function buildLaunch(persona, overrides = {}) {
   const kind = overrides.kind || persona.kind;
   const spec = CLI_KINDS[kind];
   if (!spec) throw new Error(`Unknown CLI kind: ${kind}`);
 
-  const cwd = overrides.cwd || persona.cwd || HOME_DIR;
+  const cwd = overrides.cwd || persona.cwd || homeDir();
 
   const env = safeEnvMerge(persona.env, overrides.env, {
-    // Help CLIs render rich TUIs inside the PTY.
+    // Help CLIs render rich TUIs inside the PTY. TERM/COLORFGBG are POSIX
+    // terminfo conventions that Windows console apps ignore, but they are
+    // harmless there and correct everywhere else.
     TERM: 'xterm-256color',
     COLORTERM: 'truecolor',
     FORCE_COLOR: '3',
@@ -90,70 +153,67 @@ export function buildLaunch(persona, overrides = {}) {
   }
 
   // Resume is per-launch only: it names one specific past conversation, which
-  // is never a property of a reusable persona. Only Claude Code supports it,
-  // and we reject rather than ignore: silently dropping the flag would answer
-  // "resume this conversation" with a 201 and a brand-new empty session.
-  // Checked before the `terminal` early return so that kind can't slip past.
+  // is never a property of a reusable persona. Rejected rather than ignored
+  // for kinds that can't resume, so a caller asking to resume never gets a 201
+  // and a silently-empty new conversation. Checked before the `terminal`
+  // early return so that kind can't slip past.
   const resumeSessionId = overrides.resumeSessionId;
-  if (resumeSessionId && kind !== 'claude') {
+  if (resumeSessionId && !spec.resume) {
     throw new Error(`Resuming a session is not supported for CLI kind: ${kind}`);
   }
 
-  // Plain terminal: spawn the user's own login shell interactively — no CLI,
-  // no persona flags. The PTY dies when the shell exits.
+  // Plain terminal: spawn the user's own shell interactively — no CLI, no
+  // persona flags. The PTY dies when the shell exits.
   if (kind === 'terminal') {
-    const shell = process.env.SHELL || '/bin/zsh';
+    const shell = defaultShell(env);
+    const args = loginShellArgs(shell);
     return {
       kind,
       file: shell,
-      args: ['-l'],
+      args,
       cwd,
       env,
-      commandLine: `${shell} -l`,
+      commandLine: [shell, ...args].join(' '),
       label: persona.name || spec.label,
     };
   }
 
-  const model = overrides.model || persona.model;
-  const agent = overrides.agent || persona.agent;
-  const systemPrompt = overrides.appendSystemPrompt ?? persona.appendSystemPrompt;
-  const addDirs = asArray(overrides.addDirs ?? persona.addDirs);
-  const extraArgs = asArray(persona.extraArgs); // trusted, from persona config
+  const cliArgs = buildCliArgs(kind, {
+    model: overrides.model || persona.model,
+    agent: overrides.agent || persona.agent,
+    systemPrompt: overrides.appendSystemPrompt ?? persona.appendSystemPrompt,
+    addDirs: asArray(overrides.addDirs ?? persona.addDirs),
+    extraArgs: asArray(persona.extraArgs), // trusted, from persona config
+    resumeSessionId,
+  });
 
-  const parts = [spec.bin];
-
-  if (kind === 'claude') {
-    // Resume a stored conversation instead of starting empty. --fork-session
-    // gives the resumed run a fresh session id, so the original transcript is
-    // never appended to and the same history can be opened in several tabs
-    // without them fighting over one file.
-    if (resumeSessionId) {
-      // Emit the normalized id, not the raw one: a trailing newline from a
-      // paste would otherwise pass validation and reach the CLI inside the
-      // quotes, which `claude` rejects as an unknown session — the tab would
-      // spawn and die with no visible reason.
-      const id = normalizeSessionId(resumeSessionId);
-      if (!id) throw new Error(`Invalid resume session id: ${resumeSessionId}`);
-      parts.push('--resume', shellQuote(id), '--fork-session');
+  if (isWindows()) {
+    // No shell: resolve the real executable ourselves, since nothing else in
+    // the chain would search PATH or apply PATHEXT.
+    const file = findExecutable(spec.bin, env);
+    if (!file) {
+      throw new Error(
+        `${spec.label} executable "${spec.bin}" was not found on PATH. ` +
+          `Install it, or add its install directory to PATH and restart the dashboard.`
+      );
     }
-    if (model) parts.push('--model', shellQuote(model));
-    if (agent) parts.push('--agent', shellQuote(agent));
-    if (systemPrompt) parts.push('--append-system-prompt', shellQuote(systemPrompt));
-    for (const d of addDirs) parts.push('--add-dir', shellQuote(d));
-  } else if (kind === 'opencode') {
-    // opencode uses cwd for the project; model/agent are flags.
-    if (model) parts.push('--model', shellQuote(model));
-    if (agent) parts.push('--agent', shellQuote(agent));
+    return {
+      kind,
+      file,
+      args: cliArgs,
+      cwd,
+      env,
+      // Display only — node-pty performs the real Win32 escaping from `args`.
+      commandLine: [spec.bin, ...cliArgs].join(' '),
+      label: persona.name || spec.label,
+    };
   }
 
-  // extraArgs are raw tokens supplied by the operator in the persona config.
-  for (const a of extraArgs) parts.push(shellQuote(a));
-
-  const commandLine = 'exec ' + parts.join(' ');
-
+  const shell = posixLoginShell(env);
+  const commandLine = 'exec ' + [spec.bin, ...cliArgs.map(shellQuote)].join(' ');
   return {
     kind,
-    file: '/bin/bash',
+    file: shell,
     args: ['-lc', commandLine],
     cwd,
     env,

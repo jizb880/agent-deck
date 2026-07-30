@@ -5,12 +5,13 @@
   "type": "module",
   "description": "Local dashboard to manage multiple Claude Code + OpenCode CLI sessions (PTY, personas, split panes)",
   "scripts": {
-    "setup": "bash scripts/setup.sh",
+    "setup": "node scripts/setup.mjs",
     "dev:server": "npm --prefix server run dev",
     "dev:web": "npm --prefix web run dev",
-    "dev": "bash scripts/dev.sh",
+    "dev": "node scripts/dev.mjs",
     "build": "npm --prefix web run build",
-    "start": "npm --prefix server run start"
+    "start": "node scripts/start.mjs",
+    "test": "npm --prefix server run test"
   },
   "engines": {
     "node": ">=18"

@@ -20,6 +20,10 @@ async function req(method, url, body) {
 }
 
 export const api = {
+  // Reports the server's platform and home dir so the UI can show path
+  // examples that match the machine the CLIs actually run on.
+  health: () => req('GET', '/api/health'),
+
   cliKinds: () => req('GET', '/api/cli-kinds'),
 
   listPersonas: () => req('GET', '/api/personas'),

@@ -179,7 +179,7 @@ export default function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <div className="logo">⌘ Agent Control</div>
+        <div className="logo">▚ Agent Deck</div>
         <div className="sub">Claude Code · OpenCode</div>
       </div>
 

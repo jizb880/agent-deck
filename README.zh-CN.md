@@ -22,10 +22,10 @@
 
 **环境要求**
 
-- macOS / Linux（Windows 请用 WSL）
+- macOS、Linux 或 Windows 10 1809+ / Windows 11
 - Node.js ≥ 18
-- `node-pty` 需要 C/C++ 工具链（macOS：`xcode-select --install`；Linux：`build-essential` + `python3`）
 - 已安装并登录 `claude` 和/或 `opencode` CLI，且在 PATH 中
+- **仅 Linux 需要：** `node-pty` 的 C/C++ 工具链（`build-essential` + `python3`）—— node-pty 为 macOS 和 Windows 提供预编译二进制，但不提供 Linux 的，因此 Linux 上需从源码编译。macOS 仅在触发编译时才需要 `xcode-select --install`。
 
 **一键安装**
 
@@ -33,17 +33,19 @@
 npm run setup
 ```
 
-安装 `server/` 与 `web/` 依赖、修正 node-pty `spawn-helper` 可执行权限、构建前端。
+安装 `server/` 与 `web/` 依赖、按需修正 node-pty `spawn-helper` 可执行权限（macOS）、构建前端。
 
 **启动**
 
 ```bash
 # 生产模式：单端口同时提供 UI 与 WebSocket
-./scripts/start.sh          # http://127.0.0.1:4173
+npm start                   # http://127.0.0.1:4173
 
 # 开发模式：Vite HMR + 后端热重载
 npm run dev                 # http://127.0.0.1:5173
 ```
+
+所有脚本都是纯 Node 实现，在 bash / zsh / cmd.exe / PowerShell 里行为一致。
 
 环境变量：`PORT`（默认 4173）、`HOST`（默认 127.0.0.1）、`SCROLLBACK_BYTES`、`IDLE_AFTER_MS`、`CONTROL_APP_DATA`（personas.json 存放目录）、`REAP_EXITED_AFTER_MS`。
 
@@ -51,12 +53,19 @@ npm run dev                 # http://127.0.0.1:5173
 
 不写入任何全局位置，所有内容都在本目录内。
 
-```bash
-# 停掉服务（Ctrl-C，或杀掉占用端口的进程）
-lsof -ti tcp:4173 -sTCP:LISTEN | xargs kill
+用 Ctrl-C 停掉服务，然后删掉整个目录即可。角色数据在 `data/personas.json`（若设置过 `CONTROL_APP_DATA` 则在该目录）。
 
-# 删除整个目录（角色数据在 data/personas.json，若设置过 $CONTROL_APP_DATA 则在该目录）
-rm -rf /path/to/control_app
+如果还有残留进程占着端口：
+
+```bash
+# macOS / Linux
+lsof -ti tcp:4173 -sTCP:LISTEN | xargs kill
+```
+
+```powershell
+# Windows
+netstat -ano | findstr :4173     # 最后一列是 PID
+taskkill /PID <pid> /F
 ```
 
 ## 功能
@@ -65,9 +74,10 @@ rm -rf /path/to/control_app
 - **会话持久化** — PTY 由后端长驻进程托管，保留 1 MiB 滚屏历史；刷新/断线后重新附着并回放完整历史。（后端重启会结束会话，见「进阶」。）
 - **Persona 预设** — 保存系统提示词、模型、工作目录、环境变量、额外参数，快捷启动区一键拉起。
 - **恢复历史会话** — 新建 Claude Code 会话时可从下拉列表挑一条该目录下的历史对话（按时间倒序，带首条提问摘要）继续；留空即新建空白会话。以 `--fork-session` 恢复，原记录不会被改写。
-- **普通终端** — 「+ 终端」按钮打开登录 shell 页签，与 Agent 会话并排使用。
+- **普通终端** — 「+ 终端」按钮打开 shell 页签（macOS/Linux 为登录 shell，Windows 为 PowerShell 或 `cmd.exe`），与 Agent 会话并排使用。
 - **会话看板** — 侧边栏实时显示每个会话状态（启动中 / 运行中 / 处理中 / 空闲 / 已退出）；主区域支持标签或分屏，拖拽实时同步终端尺寸。
 - **独立工作区** — 每个会话可指向不同项目目录。
+- **跨平台** — 支持 macOS、Linux 与 Windows。POSIX 上通过登录 shell 启动 CLI 以加载 PATH；Windows 上直接以 argv 数组启动（链路中没有 shell，也就不存在命令行引号转义问题）。
 
 ## 使用
 
@@ -91,15 +101,21 @@ rm -rf /path/to/control_app
 
 角色数据保存在 `data/personas.json`，首次启动自动写入三个示例。
 
-恢复会话**不是** Persona 字段：它指向某一次具体的历史对话，因此只在启动对话框里按次选择，对应 `--resume <session-id> --fork-session`（仅 Claude Code）。下拉列表直接读取 Claude Code 自己的记录目录 `~/.claude/projects/`（可用 `CLAUDE_PROJECTS_DIR` 覆盖），按所选工作目录最多列出 `RESUME_LIST_LIMIT` 条（默认 30）。
+恢复会话**不是** Persona 字段：它指向某一次具体的历史对话，因此只在启动对话框里按次选择，对应 `--resume <session-id> --fork-session`（仅 Claude Code）。下拉列表直接读取 Claude Code 自己的记录目录 `~/.claude/projects/`（Windows 为 `%USERPROFILE%\.claude\projects`；可用 `CLAUDE_PROJECTS_DIR` 覆盖，或用 `CLAUDE_CONFIG_DIR` 整体迁移配置目录），按所选工作目录最多列出 `RESUME_LIST_LIMIT` 条（默认 30）。
 
 ## 排障：node-pty `posix_spawnp failed`
 
-部分 macOS + 较新 npm 组合下，node-pty 的 `spawn-helper` 被安装为不可执行，导致 `pty.spawn()` 抛出 `Error: posix_spawnp failed`。`setup.sh` / `start.sh` 已自动修复（`server/scripts/fix-node-pty.js`）。手动修复：
+部分 macOS + 较新 npm 组合下，node-pty 的 `spawn-helper` 被安装为不可执行，导致 `pty.spawn()` 抛出 `Error: posix_spawnp failed`。`npm run setup` / `npm start` 已自动修复（`server/scripts/fix-node-pty.js`）。手动修复：
 
 ```bash
 chmod +x server/node_modules/node-pty/prebuilds/<platform>/spawn-helper
 ```
+
+Windows 与 Linux 不涉及此问题：Windows 用 ConPTY（`conpty.dll`，且没有可执行位概念），Linux 上 node-pty 直接调用 `forkpty(3)`，不生成该 helper。
+
+### Windows：提示 `claude` 不在 PATH 中
+
+Windows 上链路里没有 shell，无法靠它解析 `%PATHEXT%`，因此由 launcher 自己解析可执行文件。npm 安装出来的是 `claude.cmd`；若控制台报找不到，请先确认 `where claude` 能定位到，然后重启控制台以读取最新的 PATH。
 
 ## 架构
 
@@ -116,7 +132,9 @@ Node 后端 (Fastify + ws + node-pty)
 ```
 
 - **持久化** — PTY 是后端长驻进程的子进程，各自维护滚屏缓冲，重连时回放。后端重启会结束子进程（内存态注册表）。
-- **启动方式** — `bash -lc 'exec <cli> …'`：登录 shell 加载用户 PATH，`exec` 让 PTY 直接变成 CLI 本身，信号 / 尺寸原样透传。所有 persona 值经 POSIX 单引号转义。普通终端直接拉起 `$SHELL -l`。
+- **启动方式（POSIX）** — `bash -lc 'exec <cli> …'`：登录 shell 加载用户 PATH，`exec` 让 PTY 直接变成 CLI 本身，信号 / 尺寸原样透传。所有 persona 值经 POSIX 单引号转义。普通终端直接拉起 `$SHELL -l`。
+- **启动方式（Windows）** — 直接以 **argv 数组** 启动 CLI，链路中没有 shell，由 node-pty 按 Win32 `CommandLineToArgvW` 规则转义。POSIX 单引号在 Windows 上不只是"写错了"，而是完全不生效——若在那里拼命令行，这套转义反而会变成注入入口。可执行文件由 launcher 自行按 `PATH`/`PATHEXT` 解析，因为链路里没有别的环节会做这件事。
+- **信号** — Windows 没有 POSIX 信号，node-pty 传信号会直接抛异常，因此那里改为不带参数调用 `kill()`（关闭伪控制台），SIGTERM→SIGKILL 的升级逻辑仅在 POSIX 生效。
 - **实时尺寸同步** — `ResizeObserver` + `xterm-addon-fit` 计算 cols/rows，经 WS `resize` 帧同步给 `node-pty`。
 
 ## 进阶：跨后端重启存活
@@ -131,7 +149,7 @@ Node 后端 (Fastify + ws + node-pty)
 ## 安全说明
 
 - 仅绑定 `127.0.0.1`，**无鉴权** —— 这是本地开发者工具。任何能访问该端口的人都能以你的身份执行命令；如需网络暴露，请在前面加带认证的反向代理。
-- persona 值经 POSIX 单引号转义后再拼进 `bash -lc`；persona 的 `env` 会过滤能提前执行代码的危险键（`BASH_ENV` / `ENV` / `BASH_FUNC_*` / `LD_PRELOAD` / `DYLD_*` / `PROMPT_COMMAND`）。`extraArgs` 属操作者可信输入。
+- POSIX 上 persona 值经单引号转义后再拼进 `bash -lc`；Windows 上根本不拼命令行（argv 数组），从源头消除了这一转义面。persona 的 `env` 会过滤能提前执行代码的危险键——`BASH_ENV` / `ENV` / `BASH_FUNC_*` / `LD_*` / `DYLD_*` / `PROMPT_COMMAND`，以及 Windows 的重定向键 `COMSPEC` / `PATHEXT` / `PSModulePath`——且按**大小写不敏感**匹配，因为 Windows 环境变量名本身不区分大小写，否则 `Bash_Env` 就能绕过。`extraArgs` 属操作者可信输入。
 - 已退出会话在宽限期后自动回收（`REAP_EXITED_AFTER_MS`，默认 5 分钟）；慢 WebSocket 客户端触发背压（后端暂停读取对应 PTY），不做无限缓冲。
 
 ## 目录结构
@@ -139,11 +157,12 @@ Node 后端 (Fastify + ws + node-pty)
 ```
 agent-deck/
 ├── package.json            # 顶层脚本 (setup / dev / build / start)
-├── scripts/                # setup.sh / start.sh / dev.sh
+├── scripts/                # setup.mjs / start.mjs / dev.mjs（跨平台 Node 脚本）
 ├── docs/screenshots/       # README 截图
 ├── data/personas.json      # 角色预设（首启自动生成，不入库）
 ├── server/                 # 后端 (Fastify + ws + node-pty)
-│   ├── src/{index,config,launcher,personaStore,PtySession,SessionManager,wsBridge,httpRoutes}.js
+│   ├── src/{index,config,platform,launcher,claudeSessions,personaStore,PtySession,SessionManager,wsBridge,httpRoutes}.js
+│   ├── test/                # 跨平台单测（伪造 process.platform）
 │   └── scripts/fix-node-pty.js
 └── web/                    # 前端 (React + Vite + xterm.js)
     └── src/{App,Sidebar,TerminalGrid,TerminalView,LaunchDialog,PersonaEditor,wsClient,api}.jsx|js

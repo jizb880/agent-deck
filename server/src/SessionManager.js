@@ -78,18 +78,24 @@ export class SessionManager extends EventEmitter {
     return s;
   }
 
+  /** Signal a session. False if it's unknown, or the kill could not be issued. */
   kill(id, signal) {
     const s = this.sessions.get(id);
     if (!s) return false;
-    s.kill(signal);
-    return true;
+    return s.kill(signal);
   }
 
-  /** Remove an exited session from the roster (or force-kill then remove). */
+  /**
+   * Remove an exited session from the roster (or force-kill then remove).
+   *
+   * Returns false if the process is still alive and could not be killed —
+   * dropping it from the roster in that case would answer "closed" while
+   * leaving an orphan running with no handle left to stop it.
+   */
   remove(id) {
     const s = this.sessions.get(id);
     if (!s) return false;
-    if (s.status !== 'exited') s.kill('SIGKILL');
+    if (s.status !== 'exited' && !s.kill('SIGKILL')) return false;
     s.removeAllListeners();
     s.releaseBuffers();
     this.sessions.delete(id);

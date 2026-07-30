@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { api } from './api.js';
+import { useServerPlatform } from './usePlatform.js';
 
 // Sentinel for the "type an id by hand" choice, so it can't collide with a
 // real session id (which is always a UUID).
@@ -38,6 +39,7 @@ export default function LaunchDialog({ initial, personas, cliKinds, onCancel, on
   const [err, setErr] = useState('');
 
   const effectiveKind = selectedPersona ? selectedPersona.kind : kind;
+  const plat = useServerPlatform();
 
   // Resume: '' means start a blank session (the default). Otherwise it's the
   // id of a stored conversation, or MANUAL while the user types one in.
@@ -164,10 +166,10 @@ export default function LaunchDialog({ initial, personas, cliKinds, onCancel, on
           </>
         )}
 
-        <label>工作目录 Working Dir（留空则用角色默认 / $HOME）</label>
+        <label>工作目录 Working Dir（留空则用角色默认 / {plat.homeLabel}）</label>
         <input
           value={cwd}
-          placeholder="/Users/you/projects/my-app"
+          placeholder={plat.examplePath}
           onChange={(e) => setCwd(e.target.value)}
         />
 
@@ -195,7 +197,7 @@ export default function LaunchDialog({ initial, personas, cliKinds, onCancel, on
             )}
             {resumeChoice === '' && !resumeLoading && resumable?.length === 0 && (
               <div className="muted small field-hint">
-                {effectiveCwd ? '该目录下暂无历史会话记录' : '当前目录（$HOME）暂无历史会话记录'}
+                {effectiveCwd ? '该目录下暂无历史会话记录' : `当前目录（${plat.homeLabel}）暂无历史会话记录`}
               </div>
             )}
             {manualIdInvalid && manualId.trim() !== '' && (

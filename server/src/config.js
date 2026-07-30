@@ -1,6 +1,6 @@
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { homeDir } from './platform.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -31,24 +31,32 @@ export const REAP_EXITED_AFTER_MS = Number(
 // "stop" request would leave the session running forever.
 export const KILL_ESCALATE_MS = Number(process.env.KILL_ESCALATE_MS || 1500);
 
-export const HOME_DIR = os.homedir();
+// Re-exported so callers don't each import platform.js. A function, not a
+// constant: os.homedir() reads USERPROFILE/HOME, which a test may fake.
+export { homeDir };
 
 // Where Claude Code keeps per-project conversation transcripts, one dir per
 // working directory and one <session-id>.jsonl per session. Read-only for us:
-// it's the source for the "resume a previous session" picker.
-export const CLAUDE_PROJECTS_DIR =
-  process.env.CLAUDE_PROJECTS_DIR || path.join(HOME_DIR, '.claude', 'projects');
+// it's the source for the "resume a previous session" picker. The same
+// ~/.claude layout is used on macOS, Linux and Windows (%USERPROFILE%\.claude);
+// CLAUDE_CONFIG_DIR relocates the whole config dir if the user set one.
+export const claudeProjectsDir = () =>
+  process.env.CLAUDE_PROJECTS_DIR ||
+  path.join(process.env.CLAUDE_CONFIG_DIR || path.join(homeDir(), '.claude'), 'projects');
 
 // How many recent transcripts the resume picker offers. Each one costs a
 // bounded read to extract its preview, and a picker longer than this is not
 // useful to scroll anyway.
 export const RESUME_LIST_LIMIT = Number(process.env.RESUME_LIST_LIMIT || 30);
 
-// CLIs this dashboard knows how to launch. `bin` is resolved via a login
-// shell so the user's PATH (e.g. ~/.npm-global/bin) is honored. `terminal`
-// is special-cased in the launcher: it spawns the user's own login shell.
+// CLIs this dashboard knows how to launch. On POSIX `bin` is resolved via a
+// login shell so the user's PATH (e.g. ~/.npm-global/bin) is honored; on
+// Windows there is no shell in the chain, so the launcher resolves `bin`
+// against PATH/PATHEXT itself (npm installs these as `claude.cmd`).
+// `terminal` is special-cased in the launcher: it spawns the user's own shell.
+// `resume` marks the kinds that can continue a stored conversation.
 export const CLI_KINDS = {
-  claude: { label: 'Claude Code', bin: 'claude' },
-  opencode: { label: 'OpenCode', bin: 'opencode' },
-  terminal: { label: 'Terminal', bin: null },
+  claude: { label: 'Claude Code', bin: 'claude', resume: true },
+  opencode: { label: 'OpenCode', bin: 'opencode', resume: false },
+  terminal: { label: 'Terminal', bin: null, resume: false },
 };

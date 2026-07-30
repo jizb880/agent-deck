@@ -58,7 +58,14 @@ export default function TerminalView({ sessionId, active }) {
 
   useEffect(() => {
     const term = new Terminal({
-      fontFamily: 'Menlo, Monaco, "SF Mono", "Courier New", monospace',
+      // Per-platform monospace faces, best-first: the mac ones, then the
+      // Windows console fonts (Cascadia ships with Terminal/VS, Consolas with
+      // Windows itself), then common Linux faces. Falling all the way through
+      // to generic `monospace` changes cell metrics, which FitAddon feeds
+      // straight into the cols/rows advertised to the PTY.
+      fontFamily:
+        'Menlo, Monaco, "SF Mono", "Cascadia Mono", "Cascadia Code", Consolas, ' +
+        '"DejaVu Sans Mono", "Liberation Mono", "Ubuntu Mono", "Courier New", monospace',
       fontSize: 13,
       lineHeight: 1.1,
       cursorBlink: true,

@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { api } from './api.js';
+import { useServerPlatform } from './usePlatform.js';
 
 const COLORS = ['#7c9cff', '#ff8f6b', '#5fd39b', '#f2c14e', '#c792ea', '#4dd0e1'];
 
 export default function PersonaEditor({ persona, cliKinds, onClose, onSaved }) {
   const isNew = !persona;
+  const plat = useServerPlatform();
   const [form, setForm] = useState({
     name: persona?.name || '',
     kind: persona?.kind || 'claude',
@@ -110,7 +112,7 @@ export default function PersonaEditor({ persona, cliKinds, onClose, onSaved }) {
         </div>
 
         <label>默认工作目录 Working Dir</label>
-        <input value={form.cwd} onChange={set('cwd')} placeholder="/Users/you/projects/app" />
+        <input value={form.cwd} onChange={set('cwd')} placeholder={plat.examplePath} />
 
         <label>System Prompt（append，注入到默认系统提示词之后）</label>
         <textarea rows={4} value={form.appendSystemPrompt} onChange={set('appendSystemPrompt')} />
@@ -118,7 +120,7 @@ export default function PersonaEditor({ persona, cliKinds, onClose, onSaved }) {
         <div className="grid2">
           <div>
             <label>额外允许目录 --add-dir（每行一个，仅 Claude）</label>
-            <textarea rows={3} value={form.addDirs} onChange={set('addDirs')} placeholder="/path/a&#10;/path/b" />
+            <textarea rows={3} value={form.addDirs} onChange={set('addDirs')} placeholder={`${plat.examplePathA}\n${plat.examplePathB}`} />
           </div>
           <div>
             <label>环境变量 Env（每行 KEY=VALUE）</label>

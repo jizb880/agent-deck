@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import pty from 'node-pty';
 import { SCROLLBACK_BYTES, IDLE_AFTER_MS, KILL_ESCALATE_MS } from './config.js';
+import { isWindows } from './platform.js';
 
 /**
  * A single long-lived PTY running one CLI. Owns its child process, a bounded
@@ -146,14 +147,35 @@ export class PtySession extends EventEmitter {
     }
   }
 
+  /**
+   * Terminate the CLI. Returns true if the kill was issued, false if it could
+   * not be (so callers don't forget a session whose process is still alive).
+   *
+   * Windows has no POSIX signals: node-pty *throws* "Signals not supported on
+   * windows." for any signal argument, and when the terminal isn't ready yet it
+   * queues that throw so it lands asynchronously, outside any try/catch here.
+   * Passing a signal there would therefore never kill anything — it would just
+   * leak the process and the ConPTY host. So on Windows we call kill() with no
+   * argument (which closes the pseudoconsole and terminates the child) and skip
+   * the escalation entirely, since there is no weaker signal to escalate from.
+   */
   kill(signal = 'SIGTERM') {
-    if (this.status === 'exited') return;
+    if (this.status === 'exited') return true;
     try {
+      if (isWindows()) {
+        this.child.kill();
+        return true;
+      }
       this.child.kill(signal);
-    } catch {
-      /* already gone */
+    } catch (err) {
+      // The child may have exited between our status check and the call, which
+      // is benign. Anything else means the kill did not happen, and the caller
+      // needs to know rather than assume success.
+      if (this.status === 'exited') return true;
+      this._lastKillError = err;
+      return false;
     }
-    if (signal === 'SIGKILL') return;
+    if (signal === 'SIGKILL') return true;
     // Interactive login shells (`terminal` kind) ignore SIGTERM; escalate to
     // SIGKILL if the child hasn't exited within the grace period so a "stop"
     // request always terminates the session.
@@ -167,6 +189,7 @@ export class PtySession extends EventEmitter {
       }
     }, KILL_ESCALATE_MS);
     if (this._killTimer.unref) this._killTimer.unref();
+    return true;
   }
 
   toJSON() {
