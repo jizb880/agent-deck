@@ -66,9 +66,13 @@ body {
   border-radius: 10px; padding: 0 8px; font-size: 11px;
 }
 
-.quick-launch { display: flex; gap: 8px; }
+/* Wrap onto extra rows when several agent CLIs are installed — a single
+   nowrap flex row overflows the sidebar and clips the trailing buttons. */
+.quick-launch { display: flex; flex-wrap: wrap; gap: 8px; }
 .ql {
-  flex: 1; padding: 9px 6px; border-radius: 8px; border: 1px solid var(--border);
+  /* auto basis = label's natural width, so a button never shrinks below its
+     text; grow lets the buttons on each row share the leftover space. */
+  flex: 1 1 auto; padding: 9px 10px; border-radius: 8px; border: 1px solid var(--border);
   background: var(--panel-2); cursor: pointer; transition: 0.15s;
   font-family: inherit; font-size: 12.5px; font-weight: 650;
   letter-spacing: 0.02em; white-space: nowrap;
