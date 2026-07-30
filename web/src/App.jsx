@@ -229,6 +229,7 @@ export default function App() {
       <Sidebar
         personas={personas}
         sessions={orderedSessions}
+        cliKinds={cliKinds}
         connected={connected}
         activeId={activeId}
         onLaunchPersona={(persona) => setLaunch({ persona })}

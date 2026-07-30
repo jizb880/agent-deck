@@ -156,12 +156,16 @@ export default function LaunchDialog({ initial, personas, cliKinds, onCancel, on
         {!personaId && (
           <>
             <label>CLI 类型</label>
+            {/* Only CLIs present on this machine — offering an uninstalled one
+                would produce a session that dies at spawn. */}
             <select value={kind} onChange={(e) => setKind(e.target.value)}>
-              {cliKinds.map((k) => (
-                <option key={k.id} value={k.id}>
-                  {k.label}
-                </option>
-              ))}
+              {cliKinds
+                .filter((k) => k.available !== false)
+                .map((k) => (
+                  <option key={k.id} value={k.id}>
+                    {k.label}
+                  </option>
+                ))}
             </select>
           </>
         )}

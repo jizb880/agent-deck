@@ -1,6 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-const KIND_LABEL = { claude: 'Claude Code', opencode: 'OpenCode', terminal: 'Terminal' };
+// Fallback labels for a session whose kind is not in the server's list — e.g.
+// an old session still open after that CLI was uninstalled. Live labels come
+// from /api/cli-kinds; this only keeps a badge from rendering blank.
+const KIND_LABEL = {
+  claude: 'Claude Code',
+  opencode: 'OpenCode',
+  openclaw: 'OpenClaw',
+  hermes: 'Hermes',
+  terminal: 'Terminal',
+};
 const STATUS_LABEL = {
   starting: '启动中',
   running: '运行中',
@@ -157,6 +166,7 @@ function SessionRow({
 export default function Sidebar({
   personas,
   sessions,
+  cliKinds,
   connected,
   activeId,
   onLaunchPersona,
@@ -170,6 +180,10 @@ export default function Sidebar({
   onNewPersona,
   onEditPersona,
 }) {
+  // Installed agent CLIs, in registry order. `terminal` is always available
+  // and gets its own button, so it's filtered out of the generated set.
+  const agentKinds = (cliKinds || []).filter((k) => k.id !== 'terminal' && k.available);
+
   // Live drag reorder for the session list.
   const [dragId, setDragId] = useState(null);
   const handleDragOver = (overId) => {
@@ -180,7 +194,9 @@ export default function Sidebar({
     <aside className="sidebar">
       <div className="sidebar-header">
         <div className="logo">▚ Agent Deck</div>
-        <div className="sub">Claude Code · OpenCode</div>
+        {/* Names the CLIs actually present, so the header doesn't advertise
+            tools this machine doesn't have. */}
+        <div className="sub">{agentKinds.map((k) => k.label).join(' · ') || 'No agent CLI found'}</div>
       </div>
 
       <section className="side-section">
@@ -191,16 +207,30 @@ export default function Sidebar({
           </button>
         </div>
         <div className="quick-launch">
-          <button className="ql claude" onClick={() => onQuickLaunch('claude')}>
-            + Claude Code
-          </button>
-          <button className="ql opencode" onClick={() => onQuickLaunch('opencode')}>
-            + OpenCode
-          </button>
+          {/* One button per agent CLI actually installed on this machine. An
+              absent CLI gets no button at all rather than one that could only
+              fail at spawn time. `terminal` is excluded here because it isn't
+              an agent CLI — it spawns the user's own shell below. */}
+          {agentKinds.map((k) => (
+            <button
+              key={k.id}
+              className={`ql ${k.id}`}
+              title={`启动 ${k.label}${k.path ? `\n${k.path}` : ''}`}
+              onClick={() => onQuickLaunch(k.id)}
+            >
+              + {k.label}
+            </button>
+          ))}
           <button className="ql terminal" title="打开一个本机 shell 终端页签" onClick={onQuickTerminal}>
             + 终端
           </button>
         </div>
+        {cliKinds.length > 0 && agentKinds.length === 0 && (
+          <div className="muted small field-hint">
+            未检测到已安装的 Agent CLI（claude / opencode / openclaw / hermes）。
+            安装并确保其在 PATH 中，然后刷新页面。
+          </div>
+        )}
         {personas.length > 0 && (
           <div className="persona-chips">
             {personas.map((p) => (

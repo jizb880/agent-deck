@@ -74,29 +74,34 @@ function usesThirdPartyRelay(baseUrl) {
  * differently: Windows passes it through as argv, POSIX quotes each element
  * into a `-lc` command string.
  */
-function buildCliArgs(kind, { model, agent, systemPrompt, addDirs, extraArgs, resumeSessionId }) {
-  const args = [];
-  if (kind === 'claude') {
-    if (resumeSessionId) {
-      // Emit the normalized id, not the raw one: a trailing newline from a
-      // paste would otherwise pass validation and reach the CLI, which
-      // `claude` rejects as an unknown session — the tab would spawn and die
-      // with no visible reason. --fork-session keeps the original transcript
-      // intact so the same history can be opened in several tabs.
-      const id = normalizeSessionId(resumeSessionId);
-      if (!id) throw new Error(`Invalid resume session id: ${resumeSessionId}`);
-      args.push('--resume', id, '--fork-session');
-    }
-    if (model) args.push('--model', model);
-    if (agent) args.push('--agent', agent);
-    if (systemPrompt) args.push('--append-system-prompt', systemPrompt);
-    for (const d of addDirs) args.push('--add-dir', d);
-  } else if (kind === 'opencode') {
-    // opencode uses cwd for the project; model/agent are flags.
-    if (model) args.push('--model', model);
-    if (agent) args.push('--agent', agent);
+function buildCliArgs(spec, { model, agent, systemPrompt, addDirs, extraArgs, resumeSessionId }) {
+  // Subcommand first: `openclaw chat --local` / `hermes chat` must precede any
+  // flags, and a CLI that is already interactive contributes nothing here.
+  const args = [...(spec.subcommand || [])];
+
+  if (resumeSessionId && spec.resume) {
+    // Emit the normalized id, not the raw one: a trailing newline from a paste
+    // would otherwise pass validation and reach the CLI, which `claude`
+    // rejects as an unknown session — the tab would spawn and die with no
+    // visible reason. --fork-session keeps the original transcript intact so
+    // the same history can be opened in several tabs.
+    const id = normalizeSessionId(resumeSessionId);
+    if (!id) throw new Error(`Invalid resume session id: ${resumeSessionId}`);
+    args.push('--resume', id, '--fork-session');
   }
-  // extraArgs are raw tokens supplied by the operator in the persona config.
+
+  // Flag spellings come from the spec because they genuinely differ per CLI
+  // (hermes uses -m, not --model). A null flag means the CLI has no such
+  // option, so the value is dropped rather than guessed at — passing an
+  // unknown flag makes the CLI exit immediately with a usage error, which
+  // surfaces as a tab that dies on spawn.
+  if (model && spec.modelFlag) args.push(spec.modelFlag, model);
+  if (agent && spec.agentFlag) args.push(spec.agentFlag, agent);
+  if (systemPrompt && spec.promptFlag) args.push(spec.promptFlag, systemPrompt);
+  if (spec.addDirFlag) for (const d of addDirs) args.push(spec.addDirFlag, d);
+
+  // extraArgs are raw tokens supplied by the operator in the persona config —
+  // the escape hatch for any flag this table doesn't model.
   for (const a of extraArgs) args.push(a);
   return args;
 }
@@ -178,7 +183,7 @@ export function buildLaunch(persona, overrides = {}) {
     };
   }
 
-  const cliArgs = buildCliArgs(kind, {
+  const cliArgs = buildCliArgs(spec, {
     model: overrides.model || persona.model,
     agent: overrides.agent || persona.agent,
     systemPrompt: overrides.appendSystemPrompt ?? persona.appendSystemPrompt,

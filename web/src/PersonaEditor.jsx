@@ -87,7 +87,9 @@ export default function PersonaEditor({ persona, cliKinds, onClose, onSaved }) {
           <div>
             <label>CLI 类型</label>
             <select value={form.kind} onChange={set('kind')}>
-              {cliKinds.map((k) => (
+              {cliKinds
+                .filter((k) => k.available !== false || k.id === form.kind)
+                .map((k) => (
                 <option key={k.id} value={k.id}>
                   {k.label}
                 </option>

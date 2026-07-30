@@ -49,14 +49,87 @@ export const claudeProjectsDir = () =>
 // useful to scroll anyway.
 export const RESUME_LIST_LIMIT = Number(process.env.RESUME_LIST_LIMIT || 30);
 
-// CLIs this dashboard knows how to launch. On POSIX `bin` is resolved via a
-// login shell so the user's PATH (e.g. ~/.npm-global/bin) is honored; on
-// Windows there is no shell in the chain, so the launcher resolves `bin`
-// against PATH/PATHEXT itself (npm installs these as `claude.cmd`).
-// `terminal` is special-cased in the launcher: it spawns the user's own shell.
-// `resume` marks the kinds that can continue a stored conversation.
+/**
+ * CLIs this dashboard knows how to launch.
+ *
+ * Each entry is data, not code: the launcher reads these fields rather than
+ * branching per kind, so supporting another agent CLI is a matter of adding an
+ * entry here. Fields:
+ *
+ *   label      Display name in the UI.
+ *   bin        Executable to look for on PATH. On POSIX it is resolved by the
+ *              login shell; on Windows the launcher resolves it against
+ *              PATH/PATHEXT itself (npm installs these as `<name>.cmd`).
+ *              null means "not a real CLI" — see `terminal` below.
+ *   subcommand Argv prefix needed to reach an interactive session, if the CLI
+ *              needs one (`openclaw chat`, `hermes chat`). Empty for CLIs whose
+ *              bare invocation is already interactive.
+ *   modelFlag  How to pass a model override, or null if unsupported. Spelling
+ *              differs per CLI (`--model` vs `-m`), which is exactly why this
+ *              is data.
+ *   agentFlag  How to pass an agent/persona override, or null.
+ *   promptFlag How to append a system prompt, or null.
+ *   addDirFlag How to grant an extra directory, repeated per path, or null.
+ *   resume     Whether the dashboard can restore a stored conversation. Only
+ *              Claude Code is wired up (see claudeSessions.js); the others keep
+ *              their own history in formats we don't read, so offering resume
+ *              would be a promise we can't keep.
+ *
+ * `terminal` is special-cased in the launcher: it spawns the user's own shell.
+ */
 export const CLI_KINDS = {
-  claude: { label: 'Claude Code', bin: 'claude', resume: true },
-  opencode: { label: 'OpenCode', bin: 'opencode', resume: false },
-  terminal: { label: 'Terminal', bin: null, resume: false },
+  claude: {
+    label: 'Claude Code',
+    bin: 'claude',
+    subcommand: [],
+    modelFlag: '--model',
+    agentFlag: '--agent',
+    promptFlag: '--append-system-prompt',
+    addDirFlag: '--add-dir',
+    resume: true,
+  },
+  opencode: {
+    label: 'OpenCode',
+    bin: 'opencode',
+    subcommand: [],
+    // opencode takes the project from cwd; model/agent are flags.
+    modelFlag: '--model',
+    agentFlag: '--agent',
+    promptFlag: null,
+    addDirFlag: null,
+    resume: false,
+  },
+  openclaw: {
+    label: 'OpenClaw',
+    bin: 'openclaw',
+    // `chat` is the local terminal UI (an alias for `tui --local`); the bare
+    // command only prints help. --local keeps it on the embedded runtime so a
+    // session works without a configured gateway.
+    subcommand: ['chat', '--local'],
+    modelFlag: null, // model is chosen by openclaw's own config/session
+    agentFlag: null,
+    promptFlag: null,
+    addDirFlag: null,
+    resume: false,
+  },
+  hermes: {
+    label: 'Hermes',
+    bin: 'hermes',
+    subcommand: ['chat'],
+    modelFlag: '-m', // hermes spells it -m/--model, not --model
+    agentFlag: null,
+    promptFlag: null,
+    addDirFlag: null,
+    resume: false,
+  },
+  terminal: {
+    label: 'Terminal',
+    bin: null,
+    subcommand: [],
+    modelFlag: null,
+    agentFlag: null,
+    promptFlag: null,
+    addDirFlag: null,
+    resume: false,
+  },
 };

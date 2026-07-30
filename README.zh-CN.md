@@ -2,7 +2,7 @@
 
 [English](./README.md) | **简体中文**
 
-本地 Web 控制台，用于并排运行多个 AI 编码 Agent CLI（`claude` / `opencode`）和普通 shell 终端。真实 PTY 终端、刷新浏览器会话不丢、Persona 预设一键拉起、多标签 / 分屏布局。
+本地 Web 控制台，用于并排运行多个 AI 编码 Agent CLI（`claude`、`opencode`、`openclaw`、`hermes`）和普通 shell 终端。真实 PTY 终端、刷新浏览器会话不丢、Persona 预设一键拉起、多标签 / 分屏布局。
 
 ## 界面预览
 
@@ -24,7 +24,7 @@
 
 - macOS、Linux 或 Windows 10 1809+ / Windows 11
 - Node.js ≥ 18
-- 已安装并登录 `claude` 和/或 `opencode` CLI，且在 PATH 中
+- 至少安装并登录一个受支持的 Agent CLI，且在 PATH 中：`claude`、`opencode`、`openclaw` 或 `hermes`。控制台会自动检测装了哪些，只显示实际存在的。
 - **仅 Linux 需要：** `node-pty` 的 C/C++ 工具链（`build-essential` + `python3`）—— node-pty 为 macOS 和 Windows 提供预编译二进制，但不提供 Linux 的，因此 Linux 上需从源码编译。macOS 仅在触发编译时才需要 `xcode-select --install`。
 
 **一键安装**
@@ -77,11 +77,12 @@ taskkill /PID <pid> /F
 - **普通终端** — 「+ 终端」按钮打开 shell 页签（macOS/Linux 为登录 shell，Windows 为 PowerShell 或 `cmd.exe`），与 Agent 会话并排使用。
 - **会话看板** — 侧边栏实时显示每个会话状态（启动中 / 运行中 / 处理中 / 空闲 / 已退出）；主区域支持标签或分屏，拖拽实时同步终端尺寸。
 - **独立工作区** — 每个会话可指向不同项目目录。
+- **自动检测 CLI** — 快捷启动只显示本机实际安装的 Agent CLI（`claude` / `opencode` / `openclaw` / `hermes`），并通过登录 shell 的 PATH 解析，因此版本管理器和 `~/.local/bin` 下的安装也能找到。没装的不会出现。
 - **跨平台** — 支持 macOS、Linux 与 Windows。POSIX 上通过登录 shell 启动 CLI 以加载 PATH；Windows 上直接以 argv 数组启动（链路中没有 shell，也就不存在命令行引号转义问题）。
 
 ## 使用
 
-1. 侧边栏**快捷启动**：开裸 `claude` / `opencode` 会话、点角色 chip 按预设启动、或点 **+ 终端** 打开 shell 页签。
+1. 侧边栏**快捷启动**：每个检测到的 Agent CLI 一个按钮，加上各预设角色的 chip，以及 **+ 终端** 打开 shell 页签。未安装的 CLI 不会显示按钮，因此不会出现点了才在启动时失败的情况。
 2. 启动对话框可覆盖工作目录 / 模型 / 标题，并可选择要恢复的历史会话（留空 = 新建空白会话）。
 3. 主区域顶部切换「标签 / 分屏」；分屏下拖拽分隔条实时调整尺寸。
 4. 侧边栏「**停止**」与页签「**×**」效果相同：终止 CLI 并关闭页签。已退出会话短暂保留后自动回收。
@@ -89,15 +90,15 @@ taskkill /PID <pid> /F
 
 ### Persona → CLI 参数映射
 
-| 字段 | Claude Code | OpenCode |
-|---|---|---|
-| 工作目录 cwd | 进程 cwd | 进程 cwd（project 目录）|
-| 模型 model | `--model` | `--model provider/model` |
-| Agent | `--agent` | `--agent` |
-| System Prompt | `--append-system-prompt` | `--append-system-prompt`（不支持则忽略）|
-| 额外目录 addDirs | `--add-dir`（每项）| — |
-| 环境变量 env | 注入进程环境 | 注入进程环境 |
-| 额外参数 extraArgs | 原样追加 | 原样追加 |
+| 字段 | Claude Code | OpenCode | OpenClaw | Hermes |
+|---|---|---|---|---|
+| 工作目录 cwd | 进程 cwd | 进程 cwd（project 目录）| 进程 cwd | 进程 cwd |
+| 模型 model | `--model` | `--model provider/model` | —（在 OpenClaw 配置里设置）| `-m` |
+| Agent | `--agent` | `--agent` | — | — |
+| System Prompt | `--append-system-prompt` | `--append-system-prompt`（不支持则忽略）| — | — |
+| 额外目录 addDirs | `--add-dir`（每项）| — | — | — |
+| 环境变量 env | 注入进程环境 | 注入进程环境 | 注入 | 注入 |
+| 额外参数 extraArgs | 原样追加 | 原样追加 | 原样追加 | 原样追加 |
 
 角色数据保存在 `data/personas.json`，首次启动自动写入三个示例。
 
@@ -128,7 +129,7 @@ Node 后端 (Fastify + ws + node-pty)
   ├── httpRoutes ── personaStore (JSON 持久化) ── launcher (persona → argv/env/cwd)
   └── wsBridge ──── SessionManager ── PtySession { node-pty 子进程 + 1MiB 滚屏环形缓冲 }
         │
-   claude CLI / opencode CLI / 登录 shell
+   claude / opencode / openclaw / hermes CLI，或登录 shell
 ```
 
 - **持久化** — PTY 是后端长驻进程的子进程，各自维护滚屏缓冲，重连时回放。后端重启会结束子进程（内存态注册表）。

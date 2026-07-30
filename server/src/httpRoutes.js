@@ -1,14 +1,19 @@
 import fs from 'node:fs';
 import { personaStore } from './personaStore.js';
 import { sessionManager } from './SessionManager.js';
-import { CLI_KINDS, homeDir } from './config.js';
+import { homeDir } from './config.js';
 import { listResumableSessions } from './claudeSessions.js';
+import { detectCliKinds } from './cliDetect.js';
 
 export function registerRoutes(app) {
   app.get('/api/health', async () => ({ ok: true, home: homeDir(), platform: process.platform }));
 
-  app.get('/api/cli-kinds', async () =>
-    Object.entries(CLI_KINDS).map(([id, v]) => ({ id, label: v.label }))
+  // Every known CLI kind plus whether it is actually installed, so the UI can
+  // offer a launch button only for CLIs that exist on this machine. Detection
+  // is cached server-side; `?refresh=1` forces a re-probe for a user who just
+  // installed one and doesn't want to wait out the TTL.
+  app.get('/api/cli-kinds', async (req) =>
+    detectCliKinds({ force: req.query?.refresh === '1' })
   );
 
   // Resumable Claude Code conversations for a working directory, newest first.

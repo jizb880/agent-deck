@@ -9,6 +9,10 @@
   --claude: #c2410c;
   --opencode: #0f8a5f;
   --terminal: #52607a;
+  /* OpenClaw's own brand orange, darkened for contrast on the white panel;
+     Hermes gets a distinct violet so no two kinds read as the same color. */
+  --openclaw: #b8431f;
+  --hermes: #6d3fc4;
   --danger: #d93a3a;
   --ok: #0f8a5f;
 }
@@ -71,9 +75,13 @@ body {
 }
 .ql.claude { color: var(--claude); background: rgba(194, 65, 12, 0.06); }
 .ql.opencode { color: var(--opencode); background: rgba(15, 138, 95, 0.06); }
+.ql.openclaw { color: var(--openclaw); background: rgba(184, 67, 31, 0.06); }
+.ql.hermes { color: var(--hermes); background: rgba(109, 63, 196, 0.06); }
 .ql.terminal { color: var(--terminal); background: rgba(82, 96, 122, 0.06); }
 .ql.claude:hover { border-color: var(--claude); background: rgba(194, 65, 12, 0.12); }
 .ql.opencode:hover { border-color: var(--opencode); background: rgba(15, 138, 95, 0.12); }
+.ql.openclaw:hover { border-color: var(--openclaw); background: rgba(184, 67, 31, 0.12); }
+.ql.hermes:hover { border-color: var(--hermes); background: rgba(109, 63, 196, 0.12); }
 .ql.terminal:hover { border-color: var(--terminal); background: rgba(82, 96, 122, 0.12); }
 
 /* ---------- Persona chips (compact, in Quick Launch) ---------- */
@@ -127,6 +135,8 @@ body {
 .kind-badge { font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 700; letter-spacing: 0.02em; }
 .kind-badge.claude { background: rgba(194, 65, 12, 0.12); color: var(--claude); }
 .kind-badge.opencode { background: rgba(15, 138, 95, 0.12); color: var(--opencode); }
+.kind-badge.openclaw { background: rgba(184, 67, 31, 0.12); color: var(--openclaw); }
+.kind-badge.hermes { background: rgba(109, 63, 196, 0.12); color: var(--hermes); }
 .kind-badge.terminal { background: rgba(82, 96, 122, 0.12); color: var(--terminal); }
 .chip { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: var(--panel); border: 1px solid var(--border); color: var(--muted); }
 

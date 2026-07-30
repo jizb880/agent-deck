@@ -2,7 +2,7 @@
 
 **English** | [简体中文](./README.zh-CN.md)
 
-A local web dashboard for running multiple AI coding agent CLIs (`claude` / `opencode`) and plain shell terminals side by side. Real PTY terminals, sessions survive browser refreshes, one-click persona presets, tabs / split-pane layout.
+A local web dashboard for running multiple AI coding agent CLIs (`claude`, `opencode`, `openclaw`, `hermes`) and plain shell terminals side by side. Real PTY terminals, sessions survive browser refreshes, one-click persona presets, tabs / split-pane layout.
 
 ## Screenshots
 
@@ -24,7 +24,7 @@ A local web dashboard for running multiple AI coding agent CLIs (`claude` / `ope
 
 - macOS, Linux, or Windows 10 1809+ / Windows 11
 - Node.js ≥ 18
-- `claude` and/or `opencode` CLI installed, logged in, and on your PATH
+- At least one supported agent CLI installed, logged in, and on your PATH: `claude`, `opencode`, `openclaw`, or `hermes`. The dashboard detects which are present and only offers those.
 - **Linux only:** a C/C++ toolchain for `node-pty` (`build-essential` + `python3`) — node-pty ships prebuilt binaries for macOS and Windows, but not Linux, so it compiles from source there. macOS needs `xcode-select --install` only if a build is triggered.
 
 **Setup**
@@ -78,11 +78,12 @@ taskkill /PID <pid> /F
 - **Plain terminals** — open your own shell as a tab next to agent sessions (login shell on macOS/Linux, PowerShell or `cmd.exe` on Windows).
 - **Session board** — live status per session (starting / running / busy / idle / exited); tabs or resizable split panes with live terminal resize.
 - **Per-session workspace** — each session can target a different project directory.
+- **Auto-detected CLIs** — Quick Launch shows a button per agent CLI actually installed (`claude` / `opencode` / `openclaw` / `hermes`), resolved through your login shell's PATH so version-manager and `~/.local/bin` installs are found. Nothing you don't have is offered.
 - **Cross-platform** — macOS, Linux and Windows. On POSIX the CLI runs via a login shell so your PATH is loaded; on Windows it is spawned directly with an argv array (no shell in the chain, so no command-line quoting to get wrong).
 
 ## Usage
 
-1. **Quick Launch** (sidebar): open a bare `claude` / `opencode` session, click a persona chip, or hit **+ 终端** for a plain shell tab.
+1. **Quick Launch** (sidebar): one button per agent CLI detected on this machine, plus a persona chip for each preset and **+ 终端** for a plain shell tab. A CLI you don't have installed gets no button, so a launch can't fail at spawn time.
 2. The launch dialog lets you override working dir / model / title, and pick a past conversation to resume (blank = new blank session).
 3. Switch the main area between **Tabs** and **Split**; drag split handles to resize live.
 4. Sidebar **停止** and the tab's **×** both terminate the CLI and close the tab. Exited sessions linger briefly, then are auto-reaped.
@@ -90,15 +91,15 @@ taskkill /PID <pid> /F
 
 ### Persona → CLI flag mapping
 
-| Field | Claude Code | OpenCode |
-|---|---|---|
-| Working dir (cwd) | process cwd | process cwd (project dir) |
-| Model | `--model` | `--model provider/model` |
-| Agent | `--agent` | `--agent` |
-| System prompt | `--append-system-prompt` | `--append-system-prompt` (ignored if unsupported) |
-| Extra dirs (addDirs) | `--add-dir` (each) | — |
-| Env vars | injected into process env | injected into process env |
-| Extra args | appended verbatim | appended verbatim |
+| Field | Claude Code | OpenCode | OpenClaw | Hermes |
+|---|---|---|---|---|
+| Working dir (cwd) | process cwd | process cwd (project dir) | process cwd | process cwd |
+| Model | `--model` | `--model provider/model` | — (set in OpenClaw config) | `-m` |
+| Agent | `--agent` | `--agent` | — | — |
+| System prompt | `--append-system-prompt` | `--append-system-prompt` (ignored if unsupported) | — | — |
+| Extra dirs (addDirs) | `--add-dir` (each) | — | — | — |
+| Env vars | injected into process env | injected into process env | injected | injected |
+| Extra args | appended verbatim | appended verbatim | appended verbatim | appended verbatim |
 
 Personas are stored in `data/personas.json`; three examples are seeded on first start.
 
@@ -129,7 +130,7 @@ Node backend (Fastify + ws + node-pty)
   ├── httpRoutes ── personaStore (JSON persistence) ── launcher (persona → argv/env/cwd)
   └── wsBridge ──── SessionManager ── PtySession { node-pty child + 1MiB scrollback ring }
         │
-   claude CLI / opencode CLI / login shell
+   claude / opencode / openclaw / hermes CLI, or a login shell
 ```
 
 - **Persistence** — PTYs are children of the long-running backend, each with a scrollback buffer replayed on re-attach. A backend restart ends them (in-memory registry).
