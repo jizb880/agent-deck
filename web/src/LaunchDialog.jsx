@@ -218,7 +218,7 @@ export default function LaunchDialog({ initial, personas, cliKinds, onCancel, on
         <label>模型 Model（可选覆盖）</label>
         <input
           value={model}
-          placeholder={effectiveKind === 'opencode' ? 'provider/model' : 'claude-...'}
+          placeholder={cliKinds.find((k) => k.id === effectiveKind)?.modelHint || ''}
           onChange={(e) => setModel(e.target.value)}
         />
 

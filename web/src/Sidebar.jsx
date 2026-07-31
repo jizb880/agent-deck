@@ -8,6 +8,7 @@ const KIND_LABEL = {
   opencode: 'OpenCode',
   openclaw: 'OpenClaw',
   hermes: 'Hermes',
+  codex: 'Codex',
   terminal: 'Terminal',
 };
 const STATUS_LABEL = {
@@ -227,7 +228,7 @@ export default function Sidebar({
         </div>
         {cliKinds.length > 0 && agentKinds.length === 0 && (
           <div className="muted small field-hint">
-            未检测到已安装的 Agent CLI（claude / opencode / openclaw / hermes）。
+            未检测到已安装的 Agent CLI（claude / opencode / openclaw / hermes / codex）。
             安装并确保其在 PATH 中，然后刷新页面。
           </div>
         )}

@@ -67,6 +67,10 @@ export const RESUME_LIST_LIMIT = Number(process.env.RESUME_LIST_LIMIT || 30);
  *   modelFlag  How to pass a model override, or null if unsupported. Spelling
  *              differs per CLI (`--model` vs `-m`), which is exactly why this
  *              is data.
+ *   modelHint  Placeholder shown in the UI's model field, since naming schemes
+ *              differ (`claude-...` vs `provider/model` vs `gpt-5.6-sol`).
+ *              Empty when we have no accurate hint — a wrong example is worse
+ *              than none, because it reads as the required format.
  *   agentFlag  How to pass an agent/persona override, or null.
  *   promptFlag How to append a system prompt, or null.
  *   addDirFlag How to grant an extra directory, repeated per path, or null.
@@ -83,6 +87,7 @@ export const CLI_KINDS = {
     bin: 'claude',
     subcommand: [],
     modelFlag: '--model',
+    modelHint: 'claude-...',
     agentFlag: '--agent',
     promptFlag: '--append-system-prompt',
     addDirFlag: '--add-dir',
@@ -94,6 +99,7 @@ export const CLI_KINDS = {
     subcommand: [],
     // opencode takes the project from cwd; model/agent are flags.
     modelFlag: '--model',
+    modelHint: 'provider/model',
     agentFlag: '--agent',
     promptFlag: null,
     addDirFlag: null,
@@ -107,6 +113,7 @@ export const CLI_KINDS = {
     // session works without a configured gateway.
     subcommand: ['chat', '--local'],
     modelFlag: null, // model is chosen by openclaw's own config/session
+    modelHint: '',
     agentFlag: null,
     promptFlag: null,
     addDirFlag: null,
@@ -117,9 +124,29 @@ export const CLI_KINDS = {
     bin: 'hermes',
     subcommand: ['chat'],
     modelFlag: '-m', // hermes spells it -m/--model, not --model
+    modelHint: '',
     agentFlag: null,
     promptFlag: null,
     addDirFlag: null,
+    resume: false,
+  },
+  codex: {
+    label: 'Codex',
+    bin: 'codex',
+    // Bare `codex` is already the interactive TUI — "if no subcommand is
+    // specified, options will be forwarded to the interactive CLI". The
+    // positional [PROMPT] it also accepts is an opening *user* message, not a
+    // system prompt, so promptFlag stays null rather than being mapped to it.
+    subcommand: [],
+    modelFlag: '--model',
+    modelHint: 'gpt-5.6-sol',
+    agentFlag: null,
+    promptFlag: null,
+    addDirFlag: '--add-dir',
+    // Codex can resume, but as a `codex resume` *subcommand* reading its own
+    // ~/.codex session store — not the `--resume <id> --fork-session` flag pair
+    // this dashboard emits, and not a transcript format claudeSessions.js can
+    // list. Wiring it up is real work, so we don't advertise it.
     resume: false,
   },
   terminal: {
@@ -127,6 +154,7 @@ export const CLI_KINDS = {
     bin: null,
     subcommand: [],
     modelFlag: null,
+    modelHint: '',
     agentFlag: null,
     promptFlag: null,
     addDirFlag: null,

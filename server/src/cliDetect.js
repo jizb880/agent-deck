@@ -52,8 +52,8 @@ let cache = { at: 0, value: null };
 /**
  * Resolve every known CLI kind, newest detection at most TTL_MS old.
  *
- * Returns [{ id, label, available, path, resume }]. `terminal` has no binary —
- * it spawns the user's own shell — so it is always available.
+ * Returns [{ id, label, available, path, resume, modelHint }]. `terminal` has
+ * no binary — it spawns the user's own shell — so it is always available.
  */
 export async function detectCliKinds({ force = false } = {}) {
   const now = Date.now();
@@ -67,17 +67,17 @@ export async function detectCliKinds({ force = false } = {}) {
     : process.env;
 
   const value = Object.entries(CLI_KINDS).map(([id, spec]) => {
-    if (!spec.bin) {
-      return { id, label: spec.label, available: true, path: null, resume: !!spec.resume };
-    }
-    const resolved = findExecutable(spec.bin, env);
-    return {
+    const common = {
       id,
       label: spec.label,
-      available: !!resolved,
-      path: resolved,
       resume: !!spec.resume,
+      modelHint: spec.modelHint || '',
     };
+    if (!spec.bin) {
+      return { ...common, available: true, path: null };
+    }
+    const resolved = findExecutable(spec.bin, env);
+    return { ...common, available: !!resolved, path: resolved };
   });
 
   cache = { at: now, value };

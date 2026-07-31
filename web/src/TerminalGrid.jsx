@@ -2,7 +2,17 @@ import React, { useState } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import TerminalView from './TerminalView.jsx';
 
-const KIND_LABEL = { claude: 'Claude Code', opencode: 'OpenCode', terminal: 'Terminal' };
+// Fallback labels for the tab/pane badge. Kept in sync with the server's CLI
+// registry — a kind missing here renders a blank badge, which is what happened
+// to OpenClaw and Hermes when they were added to the backend but not here.
+const KIND_LABEL = {
+  claude: 'Claude Code',
+  opencode: 'OpenCode',
+  openclaw: 'OpenClaw',
+  hermes: 'Hermes',
+  codex: 'Codex',
+  terminal: 'Terminal',
+};
 
 function TabHeader({ session, active, dragging, onActivate, onClose, onDragStart, onDragOver, onDragEnd }) {
   return (
@@ -62,7 +72,7 @@ export default function TerminalGrid({
         <div className="empty-hint">
           <h2>没有打开的会话</h2>
           <p>从左侧边栏点击一个 Persona 的「以此身份启动」，或用快捷启动开一个新的 CLI 会话。</p>
-          <p className="muted">Pick a persona on the left to launch a Claude Code or OpenCode session.</p>
+          <p className="muted">Pick a persona on the left, or use Quick Launch to start an agent CLI session.</p>
         </div>
       </div>
     );

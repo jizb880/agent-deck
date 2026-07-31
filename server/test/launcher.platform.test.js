@@ -204,12 +204,59 @@ test('posix: metacharacters remain quoted inside the -lc command', () => {
   assert.ok(!/^exec claude ; rm/.test(plan.args[1]), 'must not break out of the quoting');
 });
 
+test('windows: codex resolves its .cmd shim and keeps flags as argv entries', () => {
+  const bin = fakeBinDir(['codex.cmd']);
+  const plan = withPlatform({ platform: 'win32', env: WIN_ENV(bin) }, () =>
+    launcher.buildLaunch({ kind: 'codex', model: 'gpt-5-codex' }, { cwd: os.tmpdir() })
+  );
+  assert.equal(plan.file, path.join(bin, 'codex.cmd'));
+  assert.deepEqual(plan.args, ['--model', 'gpt-5-codex']);
+});
+
+test('codex: bare invocation, and only the flags it actually supports', () => {
+  // `codex` is interactive with no subcommand, and has no --agent or
+  // --append-system-prompt. Those persona fields must be dropped rather than
+  // guessed at: an unknown flag makes the CLI exit with a usage error, which
+  // surfaces as a tab that dies on spawn with no visible cause.
+  const bin = fakeBinDir(['bash', 'codex']);
+  const plan = withPlatform(
+    { platform: 'linux', env: { PATH: bin, HOME: os.tmpdir() } },
+    () =>
+      launcher.buildLaunch(
+        {
+          kind: 'codex',
+          model: 'gpt-5-codex',
+          agent: 'reviewer',
+          appendSystemPrompt: 'be terse',
+          addDirs: ['/srv/extra'],
+        },
+        { cwd: os.tmpdir() }
+      )
+  );
+
+  assert.equal(plan.args[1], "exec codex '--model' 'gpt-5-codex' '--add-dir' '/srv/extra'");
+  assert.ok(!plan.args[1].includes('--agent'), 'codex has no --agent flag');
+  assert.ok(
+    !plan.args[1].includes('be terse'),
+    'codex has no --append-system-prompt; the value must not leak in as a positional prompt'
+  );
+});
+
 test('resume is rejected for kinds that cannot resume, on every platform', () => {
   for (const platform of ['win32', 'linux', 'darwin']) {
-    const bin = fakeBinDir(['bash', 'opencode', 'opencode.cmd', 'powershell.exe']);
+    const bin = fakeBinDir([
+      'bash',
+      'opencode',
+      'opencode.cmd',
+      'codex',
+      'codex.cmd',
+      'powershell.exe',
+    ]);
     const env =
       platform === 'win32' ? WIN_ENV(bin) : { PATH: bin, HOME: os.tmpdir() };
-    for (const kind of ['opencode', 'terminal']) {
+    // codex *can* resume, but only via its own `codex resume` subcommand
+    // reading ~/.codex — not the --resume/--fork-session pair emitted here.
+    for (const kind of ['opencode', 'codex', 'terminal']) {
       assert.throws(
         () =>
           withPlatform({ platform, env }, () =>

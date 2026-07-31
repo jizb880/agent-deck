@@ -2,7 +2,7 @@
 
 **English** | [简体中文](./README.zh-CN.md)
 
-A local web dashboard for running multiple AI coding agent CLIs (`claude`, `opencode`, `openclaw`, `hermes`) and plain shell terminals side by side. Real PTY terminals, sessions survive browser refreshes, one-click persona presets, tabs / split-pane layout.
+A local web dashboard for running multiple AI coding agent CLIs (`claude`, `opencode`, `openclaw`, `hermes`, `codex`) and plain shell terminals side by side. Real PTY terminals, sessions survive browser refreshes, one-click persona presets, tabs / split-pane layout.
 
 ## Screenshots
 
@@ -24,7 +24,7 @@ A local web dashboard for running multiple AI coding agent CLIs (`claude`, `open
 
 - macOS, Linux, or Windows 10 1809+ / Windows 11
 - Node.js ≥ 18
-- At least one supported agent CLI installed, logged in, and on your PATH: `claude`, `opencode`, `openclaw`, or `hermes`. The dashboard detects which are present and only offers those.
+- At least one supported agent CLI installed, logged in, and on your PATH: `claude`, `opencode`, `openclaw`, `hermes`, or `codex`. The dashboard detects which are present and only offers those.
 - **Linux only:** a C/C++ toolchain for `node-pty` (`build-essential` + `python3`) — node-pty ships prebuilt binaries for macOS and Windows, but not Linux, so it compiles from source there. macOS needs `xcode-select --install` only if a build is triggered.
 
 **Setup**
@@ -78,7 +78,7 @@ taskkill /PID <pid> /F
 - **Plain terminals** — open your own shell as a tab next to agent sessions (login shell on macOS/Linux, PowerShell or `cmd.exe` on Windows).
 - **Session board** — live status per session (starting / running / busy / idle / exited); tabs or resizable split panes with live terminal resize.
 - **Per-session workspace** — each session can target a different project directory.
-- **Auto-detected CLIs** — Quick Launch shows a button per agent CLI actually installed (`claude` / `opencode` / `openclaw` / `hermes`), resolved through your login shell's PATH so version-manager and `~/.local/bin` installs are found. Nothing you don't have is offered.
+- **Auto-detected CLIs** — Quick Launch shows a button per agent CLI actually installed (`claude` / `opencode` / `openclaw` / `hermes` / `codex`), resolved through your login shell's PATH so version-manager and `~/.local/bin` installs are found. Nothing you don't have is offered.
 - **Cross-platform** — macOS, Linux and Windows. On POSIX the CLI runs via a login shell so your PATH is loaded; on Windows it is spawned directly with an argv array (no shell in the chain, so no command-line quoting to get wrong).
 
 ## Usage
@@ -91,15 +91,19 @@ taskkill /PID <pid> /F
 
 ### Persona → CLI flag mapping
 
-| Field | Claude Code | OpenCode | OpenClaw | Hermes |
-|---|---|---|---|---|
-| Working dir (cwd) | process cwd | process cwd (project dir) | process cwd | process cwd |
-| Model | `--model` | `--model provider/model` | — (set in OpenClaw config) | `-m` |
-| Agent | `--agent` | `--agent` | — | — |
-| System prompt | `--append-system-prompt` | `--append-system-prompt` (ignored if unsupported) | — | — |
-| Extra dirs (addDirs) | `--add-dir` (each) | — | — | — |
-| Env vars | injected into process env | injected into process env | injected | injected |
-| Extra args | appended verbatim | appended verbatim | appended verbatim | appended verbatim |
+| Field | Claude Code | OpenCode | OpenClaw | Hermes | Codex |
+|---|---|---|---|---|---|
+| Working dir (cwd) | process cwd | process cwd (project dir) | process cwd | process cwd | process cwd |
+| Model | `--model` | `--model provider/model` | — (set in OpenClaw config) | `-m` | `--model` |
+| Agent | `--agent` | `--agent` | — | — | — |
+| System prompt | `--append-system-prompt` | `--append-system-prompt` (ignored if unsupported) | — | — | — |
+| Extra dirs (addDirs) | `--add-dir` (each) | — | — | — | `--add-dir` (each) |
+| Env vars | injected into process env | injected into process env | injected | injected | injected |
+| Extra args | appended verbatim | appended verbatim | appended verbatim | appended verbatim | appended verbatim |
+
+Only Claude Code supports **resume** from the dashboard. Codex has its own `codex resume` picker over `~/.codex`, but that is a subcommand reading a store this dashboard doesn't parse, so the resume dropdown stays Claude-only rather than promising something it can't deliver.
+
+Codex's sandbox and approval policy (`-s` / `--ask-for-approval`) are left to your `~/.codex/config.toml`; set them per-persona via **Extra Args** if you want to override them for a session.
 
 Personas are stored in `data/personas.json`; three examples are seeded on first start.
 
@@ -130,7 +134,7 @@ Node backend (Fastify + ws + node-pty)
   ├── httpRoutes ── personaStore (JSON persistence) ── launcher (persona → argv/env/cwd)
   └── wsBridge ──── SessionManager ── PtySession { node-pty child + 1MiB scrollback ring }
         │
-   claude / opencode / openclaw / hermes CLI, or a login shell
+   claude / opencode / openclaw / hermes / codex CLI, or a login shell
 ```
 
 - **Persistence** — PTYs are children of the long-running backend, each with a scrollback buffer replayed on re-attach. A backend restart ends them (in-memory registry).

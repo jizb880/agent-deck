@@ -2,7 +2,7 @@
 
 [English](./README.md) | **简体中文**
 
-本地 Web 控制台，用于并排运行多个 AI 编码 Agent CLI（`claude`、`opencode`、`openclaw`、`hermes`）和普通 shell 终端。真实 PTY 终端、刷新浏览器会话不丢、Persona 预设一键拉起、多标签 / 分屏布局。
+本地 Web 控制台，用于并排运行多个 AI 编码 Agent CLI（`claude`、`opencode`、`openclaw`、`hermes`、`codex`）和普通 shell 终端。真实 PTY 终端、刷新浏览器会话不丢、Persona 预设一键拉起、多标签 / 分屏布局。
 
 ## 界面预览
 
@@ -24,7 +24,7 @@
 
 - macOS、Linux 或 Windows 10 1809+ / Windows 11
 - Node.js ≥ 18
-- 至少安装并登录一个受支持的 Agent CLI，且在 PATH 中：`claude`、`opencode`、`openclaw` 或 `hermes`。控制台会自动检测装了哪些，只显示实际存在的。
+- 至少安装并登录一个受支持的 Agent CLI，且在 PATH 中：`claude`、`opencode`、`openclaw`、`hermes` 或 `codex`。控制台会自动检测装了哪些，只显示实际存在的。
 - **仅 Linux 需要：** `node-pty` 的 C/C++ 工具链（`build-essential` + `python3`）—— node-pty 为 macOS 和 Windows 提供预编译二进制，但不提供 Linux 的，因此 Linux 上需从源码编译。macOS 仅在触发编译时才需要 `xcode-select --install`。
 
 **一键安装**
@@ -77,7 +77,7 @@ taskkill /PID <pid> /F
 - **普通终端** — 「+ 终端」按钮打开 shell 页签（macOS/Linux 为登录 shell，Windows 为 PowerShell 或 `cmd.exe`），与 Agent 会话并排使用。
 - **会话看板** — 侧边栏实时显示每个会话状态（启动中 / 运行中 / 处理中 / 空闲 / 已退出）；主区域支持标签或分屏，拖拽实时同步终端尺寸。
 - **独立工作区** — 每个会话可指向不同项目目录。
-- **自动检测 CLI** — 快捷启动只显示本机实际安装的 Agent CLI（`claude` / `opencode` / `openclaw` / `hermes`），并通过登录 shell 的 PATH 解析，因此版本管理器和 `~/.local/bin` 下的安装也能找到。没装的不会出现。
+- **自动检测 CLI** — 快捷启动只显示本机实际安装的 Agent CLI（`claude` / `opencode` / `openclaw` / `hermes` / `codex`），并通过登录 shell 的 PATH 解析，因此版本管理器和 `~/.local/bin` 下的安装也能找到。没装的不会出现。
 - **跨平台** — 支持 macOS、Linux 与 Windows。POSIX 上通过登录 shell 启动 CLI 以加载 PATH；Windows 上直接以 argv 数组启动（链路中没有 shell，也就不存在命令行引号转义问题）。
 
 ## 使用
@@ -90,15 +90,19 @@ taskkill /PID <pid> /F
 
 ### Persona → CLI 参数映射
 
-| 字段 | Claude Code | OpenCode | OpenClaw | Hermes |
-|---|---|---|---|---|
-| 工作目录 cwd | 进程 cwd | 进程 cwd（project 目录）| 进程 cwd | 进程 cwd |
-| 模型 model | `--model` | `--model provider/model` | —（在 OpenClaw 配置里设置）| `-m` |
-| Agent | `--agent` | `--agent` | — | — |
-| System Prompt | `--append-system-prompt` | `--append-system-prompt`（不支持则忽略）| — | — |
-| 额外目录 addDirs | `--add-dir`（每项）| — | — | — |
-| 环境变量 env | 注入进程环境 | 注入进程环境 | 注入 | 注入 |
-| 额外参数 extraArgs | 原样追加 | 原样追加 | 原样追加 | 原样追加 |
+| 字段 | Claude Code | OpenCode | OpenClaw | Hermes | Codex |
+|---|---|---|---|---|---|
+| 工作目录 cwd | 进程 cwd | 进程 cwd（project 目录）| 进程 cwd | 进程 cwd | 进程 cwd |
+| 模型 model | `--model` | `--model provider/model` | —（在 OpenClaw 配置里设置）| `-m` | `--model` |
+| Agent | `--agent` | `--agent` | — | — | — |
+| System Prompt | `--append-system-prompt` | `--append-system-prompt`（不支持则忽略）| — | — | — |
+| 额外目录 addDirs | `--add-dir`（每项）| — | — | — | `--add-dir`（每项）|
+| 环境变量 env | 注入进程环境 | 注入进程环境 | 注入 | 注入 | 注入 |
+| 额外参数 extraArgs | 原样追加 | 原样追加 | 原样追加 | 原样追加 | 原样追加 |
+
+只有 Claude Code 支持在控制台里**恢复历史会话**。Codex 自身有 `codex resume`，但那是读取 `~/.codex` 的子命令，与本控制台使用的 `--resume <id> --fork-session` 不是一回事，其存储格式控制台也不解析，因此恢复下拉框仍然只对 Claude Code 开放，不做无法兑现的承诺。
+
+Codex 的沙箱与审批策略（`-s` / `--ask-for-approval`）交由你自己的 `~/.codex/config.toml` 决定；若要按会话覆盖，可在角色的**额外参数**里填写。
 
 角色数据保存在 `data/personas.json`，首次启动自动写入三个示例。
 
@@ -129,7 +133,7 @@ Node 后端 (Fastify + ws + node-pty)
   ├── httpRoutes ── personaStore (JSON 持久化) ── launcher (persona → argv/env/cwd)
   └── wsBridge ──── SessionManager ── PtySession { node-pty 子进程 + 1MiB 滚屏环形缓冲 }
         │
-   claude / opencode / openclaw / hermes CLI，或登录 shell
+   claude / opencode / openclaw / hermes / codex CLI，或登录 shell
 ```
 
 - **持久化** — PTY 是后端长驻进程的子进程，各自维护滚屏缓冲，重连时回放。后端重启会结束子进程（内存态注册表）。

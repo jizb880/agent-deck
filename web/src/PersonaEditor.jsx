@@ -104,7 +104,7 @@ export default function PersonaEditor({ persona, cliKinds, onClose, onSaved }) {
             <input
               value={form.model}
               onChange={set('model')}
-              placeholder={form.kind === 'opencode' ? 'provider/model' : 'claude-...'}
+              placeholder={cliKinds.find((k) => k.id === form.kind)?.modelHint || ''}
             />
           </div>
           <div>

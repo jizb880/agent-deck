@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { DATA_DIR, PERSONAS_FILE } from './config.js';
+import { CLI_KINDS, DATA_DIR, PERSONAS_FILE } from './config.js';
 
 const DEFAULT_PERSONAS = [
   {
@@ -86,7 +86,12 @@ const ALLOWED = [
 function sanitize(input) {
   const out = {};
   for (const k of ALLOWED) if (k in input) out[k] = input[k];
-  if (out.kind && out.kind !== 'claude' && out.kind !== 'opencode') {
+  // Validate against the CLI registry rather than a hardcoded pair. That list
+  // has grown past claude/opencode, and the old check silently rewrote every
+  // OpenClaw / Hermes / Codex persona back to Claude Code on save — the editor
+  // offered the kind, the store threw it away. An unrecognized kind still
+  // falls back rather than being stored, since it could only fail at spawn.
+  if (out.kind && !Object.hasOwn(CLI_KINDS, out.kind)) {
     out.kind = 'claude';
   }
   if (out.addDirs && !Array.isArray(out.addDirs)) out.addDirs = [];

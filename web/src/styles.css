@@ -10,9 +10,12 @@
   --opencode: #0f8a5f;
   --terminal: #52607a;
   /* OpenClaw's own brand orange, darkened for contrast on the white panel;
-     Hermes gets a distinct violet so no two kinds read as the same color. */
+     Hermes gets a distinct violet and Codex a deep cyan, so no two kinds read
+     as the same color. Cyan rather than OpenAI's brand green: that would sit
+     right next to OpenCode's --opencode in the same button grid. */
   --openclaw: #b8431f;
   --hermes: #6d3fc4;
+  --codex: #0e7490;
   --danger: #d93a3a;
   --ok: #0f8a5f;
 }
@@ -66,26 +69,38 @@ body {
   border-radius: 10px; padding: 0 8px; font-size: 11px;
 }
 
-/* Wrap onto extra rows when several agent CLIs are installed — a single
-   nowrap flex row overflows the sidebar and clips the trailing buttons. */
-.quick-launch { display: flex; flex-wrap: wrap; gap: 8px; }
+/* A uniform grid rather than a wrapping flex row: with five agent CLIs plus
+   the terminal, flex-grow hands each row's leftover space to however many
+   buttons happen to land on it, so a row of two ends up much wider than a row
+   of three and a lone trailing button stretches the full width — the block
+   reads as ragged. auto-fit keeps every button the same size and re-flows to
+   1 / 2 / 3+ columns as the sidebar is dragged across its 200-560px range. */
+.quick-launch {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 8px;
+}
 .ql {
-  /* auto basis = label's natural width, so a button never shrinks below its
-     text; grow lets the buttons on each row share the leftover space. */
-  flex: 1 1 auto; padding: 9px 10px; border-radius: 8px; border: 1px solid var(--border);
+  padding: 9px 10px; border-radius: 8px; border: 1px solid var(--border);
   background: var(--panel-2); cursor: pointer; transition: 0.15s;
   font-family: inherit; font-size: 12.5px; font-weight: 650;
-  letter-spacing: 0.02em; white-space: nowrap;
+  letter-spacing: 0.02em; text-align: center;
+  /* The longest label ("+ Claude Code") fits even the narrowest track, but a
+     future CLI name might not — ellipsize rather than spill out of the
+     button. The full label is already in the title tooltip. */
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .ql.claude { color: var(--claude); background: rgba(194, 65, 12, 0.06); }
 .ql.opencode { color: var(--opencode); background: rgba(15, 138, 95, 0.06); }
 .ql.openclaw { color: var(--openclaw); background: rgba(184, 67, 31, 0.06); }
 .ql.hermes { color: var(--hermes); background: rgba(109, 63, 196, 0.06); }
+.ql.codex { color: var(--codex); background: rgba(14, 116, 144, 0.06); }
 .ql.terminal { color: var(--terminal); background: rgba(82, 96, 122, 0.06); }
 .ql.claude:hover { border-color: var(--claude); background: rgba(194, 65, 12, 0.12); }
 .ql.opencode:hover { border-color: var(--opencode); background: rgba(15, 138, 95, 0.12); }
 .ql.openclaw:hover { border-color: var(--openclaw); background: rgba(184, 67, 31, 0.12); }
 .ql.hermes:hover { border-color: var(--hermes); background: rgba(109, 63, 196, 0.12); }
+.ql.codex:hover { border-color: var(--codex); background: rgba(14, 116, 144, 0.12); }
 .ql.terminal:hover { border-color: var(--terminal); background: rgba(82, 96, 122, 0.12); }
 
 /* ---------- Persona chips (compact, in Quick Launch) ---------- */
@@ -141,6 +156,7 @@ body {
 .kind-badge.opencode { background: rgba(15, 138, 95, 0.12); color: var(--opencode); }
 .kind-badge.openclaw { background: rgba(184, 67, 31, 0.12); color: var(--openclaw); }
 .kind-badge.hermes { background: rgba(109, 63, 196, 0.12); color: var(--hermes); }
+.kind-badge.codex { background: rgba(14, 116, 144, 0.12); color: var(--codex); }
 .kind-badge.terminal { background: rgba(82, 96, 122, 0.12); color: var(--terminal); }
 .chip { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: var(--panel); border: 1px solid var(--border); color: var(--muted); }
 
