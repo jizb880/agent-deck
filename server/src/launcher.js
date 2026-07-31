@@ -74,7 +74,7 @@ function usesThirdPartyRelay(baseUrl) {
  * differently: Windows passes it through as argv, POSIX quotes each element
  * into a `-lc` command string.
  */
-function buildCliArgs(spec, { model, agent, systemPrompt, addDirs, extraArgs, resumeSessionId }) {
+function buildCliArgs(spec, { model, agent, systemPrompt, addDirs, extraArgs, resumeSessionId, autoMode }) {
   // Subcommand first: `openclaw chat --local` / `hermes chat` must precede any
   // flags, and a CLI that is already interactive contributes nothing here.
   const args = [...(spec.subcommand || [])];
@@ -99,6 +99,7 @@ function buildCliArgs(spec, { model, agent, systemPrompt, addDirs, extraArgs, re
   if (agent && spec.agentFlag) args.push(spec.agentFlag, agent);
   if (systemPrompt && spec.promptFlag) args.push(spec.promptFlag, systemPrompt);
   if (spec.addDirFlag) for (const d of addDirs) args.push(spec.addDirFlag, d);
+  if (autoMode && spec.bin === 'codex') args.push('--yolo');
 
   // extraArgs are raw tokens supplied by the operator in the persona config —
   // the escape hatch for any flag this table doesn't model.
@@ -190,6 +191,7 @@ export function buildLaunch(persona, overrides = {}) {
     addDirs: asArray(overrides.addDirs ?? persona.addDirs),
     extraArgs: asArray(persona.extraArgs), // trusted, from persona config
     resumeSessionId,
+    autoMode: overrides.autoMode,
   });
 
   if (isWindows()) {

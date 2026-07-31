@@ -35,6 +35,7 @@ export default function LaunchDialog({ initial, personas, cliKinds, onCancel, on
   const [cwd, setCwd] = useState(initialPersona?.cwd || '');
   const [model, setModel] = useState(initialPersona?.model || '');
   const [title, setTitle] = useState('');
+  const [autoMode, setAutoMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -128,6 +129,7 @@ export default function LaunchDialog({ initial, personas, cliKinds, onCancel, on
         cwd: cwd || undefined,
         model: model || undefined,
         title: title || undefined,
+        autoMode: effectiveKind === 'codex' ? autoMode : undefined,
         // Blank = start a new empty conversation. Guarded by manualIdInvalid
         // on the button so a half-typed id can't quietly become "new session".
         resumeSessionId: (canResume && resumeSessionId) || undefined,
@@ -224,6 +226,13 @@ export default function LaunchDialog({ initial, personas, cliKinds, onCancel, on
 
         <label>标签 Title（可选）</label>
         <input value={title} placeholder="自定义会话名" onChange={(e) => setTitle(e.target.value)} />
+
+        {effectiveKind === 'codex' && (
+          <label className="check-row">
+            <input type="checkbox" checked={autoMode} onChange={(e) => setAutoMode(e.target.checked)} />
+            自动模式（使用 codex --yolo）
+          </label>
+        )}
 
         {selectedPersona?.appendSystemPrompt && (
           <div className="prompt-preview">

@@ -33,6 +33,7 @@ export class SessionManager extends EventEmitter {
     addDirs,
     title,
     resumeSessionId,
+    autoMode,
   }) {
     let persona = { kind: kind || 'claude' };
     let resolvedName = null;
@@ -43,7 +44,7 @@ export class SessionManager extends EventEmitter {
       resolvedName = p.name;
     }
 
-    const overrides = { kind, cwd, model, agent, appendSystemPrompt, addDirs, resumeSessionId };
+    const overrides = { kind, cwd, model, agent, appendSystemPrompt, addDirs, resumeSessionId, autoMode };
     // Drop undefined so persona defaults win.
     for (const k of Object.keys(overrides)) {
       if (overrides[k] === undefined || overrides[k] === '') delete overrides[k];
