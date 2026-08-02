@@ -136,6 +136,55 @@ test('windows: a missing CLI gives an actionable error, not a raw spawn failure'
   );
 });
 
+// The launch dialog's working-dir field is free text, and the string it yields
+// becomes the spawn cwd verbatim — no shell in the chain normalizes it the way
+// `cd` would. Windows accepts every spelling of a directory, so the CLI starts
+// in the right place under a different NAME, and agent CLIs key per-project
+// state on that name: launched as `d:\proj`, Claude Code treats an already
+// trusted `D:\proj` as a new folder and opens on the trust prompt, where no
+// file reference can resolve. Launching `claude` by hand works, because the
+// shell canonicalized the drive letter first — which is exactly the "works in
+// the terminal, not in the dashboard" report.
+test('cwd is canonicalized to its real on-disk spelling', () => {
+  const bin = fakeBinDir(['claude.cmd']);
+  // realpath needs a directory that exists; build a nested one so casing and
+  // separators have something real to be folded against.
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'ctlapp-cwd-')));
+  const nested = path.join(root, 'Proj');
+  fs.mkdirSync(nested);
+
+  const variants = [
+    nested + path.sep, // trailing separator
+    path.join(root, '.', 'Proj'), // redundant segment
+  ];
+  if (process.platform === 'win32') {
+    // Only meaningful on a case-insensitive filesystem: on Linux these name
+    // genuinely different directories.
+    variants.push(nested.toLowerCase(), nested.toUpperCase());
+    variants.push(nested.replace(/\\/g, '/')); // pasted with forward slashes
+    // Lowercased drive letter — the spelling that actually triggered the bug.
+    variants.push(nested[0].toLowerCase() + nested.slice(1));
+  }
+
+  for (const cwd of variants) {
+    const plan = withPlatform({ platform: 'win32', env: WIN_ENV(bin) }, () =>
+      launcher.buildLaunch({ kind: 'claude' }, { cwd })
+    );
+    assert.equal(plan.cwd, nested, `every spelling must canonicalize: ${cwd}`);
+  }
+});
+
+test('a cwd that does not exist is passed through, not silently rewritten', () => {
+  const bin = fakeBinDir(['claude.cmd']);
+  // Validity is checked at the API boundary, which reports a friendly error.
+  // Normalization must not invent a different path or throw here.
+  const missing = path.join(os.tmpdir(), 'ctlapp-does-not-exist-xyz');
+  const plan = withPlatform({ platform: 'win32', env: WIN_ENV(bin) }, () =>
+    launcher.buildLaunch({ kind: 'claude' }, { cwd: missing })
+  );
+  assert.equal(plan.cwd, path.resolve(missing));
+});
+
 test('windows: terminal kind uses a Windows shell, never /bin/zsh', () => {
   const bin = fakeBinDir(['powershell.exe']);
   const plan = withPlatform({ platform: 'win32', env: WIN_ENV(bin) }, () =>

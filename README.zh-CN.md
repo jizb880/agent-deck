@@ -139,6 +139,7 @@ Node 后端 (Fastify + ws + node-pty)
 - **持久化** — PTY 是后端长驻进程的子进程，各自维护滚屏缓冲，重连时回放。后端重启会结束子进程（内存态注册表）。
 - **启动方式（POSIX）** — `bash -lc 'exec <cli> …'`：登录 shell 加载用户 PATH，`exec` 让 PTY 直接变成 CLI 本身，信号 / 尺寸原样透传。所有 persona 值经 POSIX 单引号转义。普通终端直接拉起 `$SHELL -l`。
 - **启动方式（Windows）** — 直接以 **argv 数组** 启动 CLI，链路中没有 shell，由 node-pty 按 Win32 `CommandLineToArgvW` 规则转义。POSIX 单引号在 Windows 上不只是"写错了"，而是完全不生效——若在那里拼命令行，这套转义反而会变成注入入口。可执行文件由 launcher 自行按 `PATH`/`PATHEXT` 解析，因为链路里没有别的环节会做这件事。
+- **工作目录** — 工作目录是自由文本输入，且会直接作为 spawn 的 cwd，链路中没有 shell 帮忙做 `cd` 那样的归一化，因此先统一成磁盘上的真实写法。Windows 对同一路径的各种写法都照收（`d:\proj`、`D:/proj`、结尾多一个 `\`、大小写不符），但各家 agent CLI 是按路径**字符串**记录按项目的状态：以 `d:\proj` 启动时，Claude Code 会把早已信任的 `D:\proj` 当成新目录，会话一开始就卡在信任提示上，此时 `@文件` 引用无法解析。
 - **信号** — Windows 没有 POSIX 信号，node-pty 传信号会直接抛异常，因此那里改为不带参数调用 `kill()`（关闭伪控制台），SIGTERM→SIGKILL 的升级逻辑仅在 POSIX 生效。
 - **实时尺寸同步** — `ResizeObserver` + `xterm-addon-fit` 计算 cols/rows，经 WS `resize` 帧同步给 `node-pty`。
 

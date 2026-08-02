@@ -1,5 +1,6 @@
 import { CLI_KINDS } from './config.js';
 import {
+  canonicalDir,
   defaultShell,
   findExecutable,
   homeDir,
@@ -128,7 +129,12 @@ export function buildLaunch(persona, overrides = {}) {
   const spec = CLI_KINDS[kind];
   if (!spec) throw new Error(`Unknown CLI kind: ${kind}`);
 
-  const cwd = overrides.cwd || persona.cwd || homeDir();
+  // Canonicalized because this string is handed straight to node-pty as the
+  // spawn cwd, with no shell in between to normalize it. A case or separator
+  // variant names the same directory to Windows but a *different* project to
+  // the CLI, which keys trust and per-project history on the path text — see
+  // canonicalDir.
+  const cwd = canonicalDir(overrides.cwd || persona.cwd || homeDir());
 
   const env = safeEnvMerge(persona.env, overrides.env, {
     // Help CLIs render rich TUIs inside the PTY. TERM/COLORFGBG are POSIX

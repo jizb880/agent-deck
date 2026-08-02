@@ -43,6 +43,46 @@ export async function pathKey(p) {
 }
 
 /**
+ * The on-disk spelling of a directory, for use as a spawn cwd.
+ *
+ * The launch dialog is a free-text field, so `cwd` arrives however the user
+ * typed or pasted it: `d:\proj` from a shell that lowercased the drive,
+ * `D:/proj` pasted from a URL or WSL, a trailing separator, or `Projects` where
+ * the directory is really `projects`. A shell would have normalized all of that
+ * via `cd`, but nothing does when we hand the string straight to node-pty —
+ * Windows happily accepts every variant, so the CLI starts in the right
+ * directory under a *different name*.
+ *
+ * That matters because agent CLIs key per-project state on the cwd string, not
+ * the inode. Claude Code's trusted-folder store is the visible case: launched as
+ * `d:\...` the same directory reads as a brand-new folder, so the session opens
+ * blocked on the "do you trust this folder" prompt and no file reference can
+ * resolve until it's answered — while launching `claude` by hand works, because
+ * the shell already canonicalized the drive letter. Per-project transcripts have
+ * the same sensitivity.
+ *
+ * Uses the `.native` realpath: it delegates to the OS, so the result is the
+ * spelling Windows itself considers canonical rather than one Node reconstructs.
+ * Non-existent paths are returned resolved-but-unchanged — cwd validity is the
+ * caller's business (the API layer already reports a friendly error for it), and
+ * a bad path should surface as its own error, not as a normalization failure.
+ */
+export function canonicalDir(dir) {
+  if (!dir) return dir;
+  let resolved;
+  try {
+    resolved = path.resolve(dir);
+  } catch {
+    return dir; // not a usable path string; let the spawn report it
+  }
+  try {
+    return fs.realpathSync.native(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+/**
  * Executable-name candidates for a bare command, in resolution order.
  *
  * On Windows an npm-installed CLI is a `claude.cmd` shim, not `claude`, and
