@@ -291,6 +291,46 @@ test('codex: bare invocation, and only the flags it actually supports', () => {
   );
 });
 
+// The launch dialog's yolo checkbox is one boolean, but it reaches the CLI
+// through two unrelated code paths — a POSIX -lc command string and a Windows
+// argv array — so "it works on my Mac" says nothing about the other two.
+test('codex yolo: the flag reaches the CLI intact on every platform', () => {
+  for (const platform of ['win32', 'linux', 'darwin']) {
+    const bin = fakeBinDir(['bash', 'codex', 'codex.cmd']);
+    const env = platform === 'win32' ? WIN_ENV(bin) : { PATH: bin, HOME: os.tmpdir() };
+    const plan = withPlatform({ platform, env }, () =>
+      launcher.buildLaunch({ kind: 'codex' }, { cwd: os.tmpdir(), autoMode: true })
+    );
+
+    if (platform === 'win32') {
+      // A bare argv entry: quoting it the POSIX way would make the CLI see
+      // the literal characters '--yolo' and exit with a usage error.
+      assert.deepEqual(plan.args, ['--yolo'], 'win32 argv must carry a bare --yolo');
+    } else {
+      assert.equal(plan.args[1], "exec codex '--yolo'", `${platform} -lc string`);
+    }
+  }
+});
+
+test('codex yolo: unchecked means no flag, and it never leaks to other CLIs', () => {
+  const bin = fakeBinDir(['bash', 'codex', 'claude']);
+  const env = { PATH: bin, HOME: os.tmpdir() };
+
+  // Unchecked is the default and must stay a plain sandboxed launch.
+  const off = withPlatform({ platform: 'linux', env }, () =>
+    launcher.buildLaunch({ kind: 'codex' }, { cwd: os.tmpdir(), autoMode: false })
+  );
+  assert.equal(off.args[1], 'exec codex', 'unchecked must not bypass the sandbox');
+
+  // The dialog only shows the checkbox for codex, but the API accepts any
+  // body: --yolo is not a claude flag, so an unknown-flag usage error would
+  // kill the tab at spawn.
+  const claude = withPlatform({ platform: 'linux', env }, () =>
+    launcher.buildLaunch({ kind: 'claude' }, { cwd: os.tmpdir(), autoMode: true })
+  );
+  assert.ok(!claude.args[1].includes('--yolo'), 'claude has no --yolo flag');
+});
+
 test('resume is rejected for kinds that cannot resume, on every platform', () => {
   for (const platform of ['win32', 'linux', 'darwin']) {
     const bin = fakeBinDir([

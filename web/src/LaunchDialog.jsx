@@ -228,10 +228,26 @@ export default function LaunchDialog({ initial, personas, cliKinds, onCancel, on
         <input value={title} placeholder="自定义会话名" onChange={(e) => setTitle(e.target.value)} />
 
         {effectiveKind === 'codex' && (
-          <label className="check-row">
-            <input type="checkbox" checked={autoMode} onChange={(e) => setAutoMode(e.target.checked)} />
-            自动模式（使用 codex --yolo）
-          </label>
+          <>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={autoMode}
+                onChange={(e) => setAutoMode(e.target.checked)}
+              />
+              <span>免确认模式 YOLO（codex --yolo）</span>
+            </label>
+            {/* --yolo is undocumented in `codex --help`, but passing it together
+                with --dangerously-bypass-approvals-and-sandbox is rejected as a
+                duplicate — i.e. it is an alias for that flag, not a milder
+                "auto-accept" mode. Spelling out both halves (no prompts AND no
+                sandbox) because the old "自动模式" label read like the former
+                only, which is the safe-sounding half. */}
+            <div className={autoMode ? 'small field-hint danger' : 'muted small field-hint'}>
+              跳过全部操作确认，并关闭沙箱：Codex 可直接读写本机任意文件、执行命令、访问网络，
+              全程不再询问。等同于 --dangerously-bypass-approvals-and-sandbox，请仅在可信目录使用。
+            </div>
+          </>
         )}
 
         {selectedPersona?.appendSystemPrompt && (

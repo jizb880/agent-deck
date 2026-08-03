@@ -79,6 +79,7 @@ taskkill /PID <pid> /F
 - **Session board** — live status per session (starting / running / busy / idle / exited); tabs or resizable split panes with live terminal resize.
 - **Per-session workspace** — each session can target a different project directory.
 - **Auto-detected CLIs** — Quick Launch shows a button per agent CLI actually installed (`claude` / `opencode` / `openclaw` / `hermes` / `codex`), resolved through your login shell's PATH so version-manager and `~/.local/bin` installs are found. Nothing you don't have is offered.
+- **Codex YOLO mode** — an opt-in checkbox in the launch dialog that starts Codex with `--yolo`. That flag is an undocumented alias for `--dangerously-bypass-approvals-and-sandbox`: it skips every confirmation **and** disables the sandbox, so Codex can read and write any file on the machine, run commands and reach the network without asking. Off by default; use it only in directories you trust. Sandbox and approval policy for normal launches stay in `~/.codex/config.toml`.
 - **Cross-platform** — macOS, Linux and Windows. On POSIX the CLI runs via a login shell so your PATH is loaded; on Windows it is spawned directly with an argv array (no shell in the chain, so no command-line quoting to get wrong).
 
 ## Usage
@@ -103,7 +104,7 @@ taskkill /PID <pid> /F
 
 Only Claude Code supports **resume** from the dashboard. Codex has its own `codex resume` picker over `~/.codex`, but that is a subcommand reading a store this dashboard doesn't parse, so the resume dropdown stays Claude-only rather than promising something it can't deliver.
 
-Codex's sandbox and approval policy (`-s` / `--ask-for-approval`) are left to your `~/.codex/config.toml`; set them per-persona via **Extra Args** if you want to override them for a session.
+Codex's sandbox and approval policy (`-s` / `--ask-for-approval`) are left to your `~/.codex/config.toml`; set them per-persona via **Extra Args** if you want to override them for a session. The one exception is the launch dialog's **YOLO** checkbox, which adds `--yolo` and overrides both at once — see the feature list above for what that gives up.
 
 Personas are stored in `data/personas.json`; three examples are seeded on first start.
 

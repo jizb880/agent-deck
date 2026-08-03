@@ -240,6 +240,23 @@ body {
   background: var(--panel-2); color: var(--text); font-size: 13px; font-family: inherit;
 }
 .modal textarea { resize: vertical; }
+/* Checkbox + its text on one line. Both halves of `.modal label`
+   (display:block) and `.modal input` (width:100%) have to be beaten, or the
+   box stretches the full row and drops the text onto the next line. Scoped as
+   `.modal .check-row` — (0,2,0) outranks `.modal label`'s (0,1,1), so no
+   !important is needed. flex-shrink guards the same collapse from the other
+   side: once the text wraps to two lines an auto-width checkbox would be
+   squeezed to a sliver. */
+.modal .check-row {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--text); font-size: 13px; cursor: pointer;
+}
+.modal .check-row input[type='checkbox'] {
+  width: 15px; height: 15px; flex: 0 0 auto; padding: 0; margin: 0;
+  accent-color: var(--danger); cursor: pointer;
+}
+/* The yolo hint, once armed — a warning has to look like one. */
+.field-hint.danger { color: var(--danger); }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .modal-actions { display: flex; gap: 10px; margin-top: 18px; align-items: center; }
 .modal-actions .spacer { flex: 1; }

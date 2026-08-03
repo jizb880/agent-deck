@@ -78,6 +78,7 @@ taskkill /PID <pid> /F
 - **会话看板** — 侧边栏实时显示每个会话状态（启动中 / 运行中 / 处理中 / 空闲 / 已退出）；主区域支持标签或分屏，拖拽实时同步终端尺寸。
 - **独立工作区** — 每个会话可指向不同项目目录。
 - **自动检测 CLI** — 快捷启动只显示本机实际安装的 Agent CLI（`claude` / `opencode` / `openclaw` / `hermes` / `codex`），并通过登录 shell 的 PATH 解析，因此版本管理器和 `~/.local/bin` 下的安装也能找到。没装的不会出现。
+- **Codex YOLO 模式** — 启动对话框中的可选勾选框，以 `--yolo` 启动 Codex。该参数是 `--dangerously-bypass-approvals-and-sandbox` 的未公开别名：跳过全部操作确认**并**关闭沙箱，Codex 可直接读写本机任意文件、执行命令、访问网络，全程不再询问。默认关闭，请仅在可信目录使用。常规启动的沙箱与审批策略仍由 `~/.codex/config.toml` 控制。
 - **跨平台** — 支持 macOS、Linux 与 Windows。POSIX 上通过登录 shell 启动 CLI 以加载 PATH；Windows 上直接以 argv 数组启动（链路中没有 shell，也就不存在命令行引号转义问题）。
 
 ## 使用
@@ -102,7 +103,7 @@ taskkill /PID <pid> /F
 
 只有 Claude Code 支持在控制台里**恢复历史会话**。Codex 自身有 `codex resume`，但那是读取 `~/.codex` 的子命令，与本控制台使用的 `--resume <id> --fork-session` 不是一回事，其存储格式控制台也不解析，因此恢复下拉框仍然只对 Claude Code 开放，不做无法兑现的承诺。
 
-Codex 的沙箱与审批策略（`-s` / `--ask-for-approval`）交由你自己的 `~/.codex/config.toml` 决定；若要按会话覆盖，可在角色的**额外参数**里填写。
+Codex 的沙箱与审批策略（`-s` / `--ask-for-approval`）交由你自己的 `~/.codex/config.toml` 决定；若要按会话覆盖，可在角色的**额外参数**里填写。唯一的例外是启动对话框里的 **YOLO** 勾选框，它会追加 `--yolo` 并同时覆盖这两项 —— 具体放弃了什么见上方功能列表。
 
 角色数据保存在 `data/personas.json`，首次启动自动写入三个示例。
 
