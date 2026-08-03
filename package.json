@@ -1,6 +1,6 @@
 {
   "name": "agent-deck",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "type": "module",
   "description": "Local dashboard to manage multiple Claude Code + OpenCode CLI sessions (PTY, personas, split panes)",
