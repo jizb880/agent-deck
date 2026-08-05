@@ -4,20 +4,6 @@
 
 A local web dashboard for running multiple AI coding agent CLIs (`claude`, `opencode`, `openclaw`, `hermes`, `codex`) and plain shell terminals side by side. Real PTY terminals, sessions survive browser refreshes, one-click persona presets, tabs / split-pane layout.
 
-## Screenshots
-
-**Main dashboard (Tabs view)** — sidebar with quick launch, persona chips, and a live session board (status per session: running / busy / idle); the main area hosts a full PTY terminal:
-
-![Main dashboard — tabs view](./docs/screenshots/main-tabs.png)
-
-**Split view** — run two sessions side by side; drag the divider to resize both terminals live:
-
-![Split view — two terminals side by side](./docs/screenshots/split-view.png)
-
-**Launch dialog** — pick a persona, then optionally override working dir / model / title before starting the session:
-
-![Launch session dialog](./docs/screenshots/launch-dialog.png)
-
 ## Install
 
 **Requirements**
@@ -166,7 +152,6 @@ Wrap the launch command in a re-attachable multiplexer (requires `tmux` or `dtac
 agent-deck/
 ├── package.json            # top-level scripts (setup / dev / build / start)
 ├── scripts/                # setup.mjs / start.mjs / dev.mjs (cross-platform Node)
-├── docs/screenshots/       # README screenshots
 ├── data/personas.json      # persona presets (seeded on first start, git-ignored)
 ├── server/                 # backend (Fastify + ws + node-pty)
 │   ├── src/{index,config,platform,launcher,claudeSessions,personaStore,PtySession,SessionManager,wsBridge,httpRoutes}.js
