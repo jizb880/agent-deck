@@ -4,6 +4,20 @@
 
 A local web dashboard for running multiple AI coding agent CLIs (`claude`, `opencode`, `openclaw`, `hermes`, `codex`) and plain shell terminals side by side. Real PTY terminals, sessions survive browser refreshes, one-click persona presets, tabs / split-pane layout.
 
+## Screenshots
+
+**Main dashboard (Tabs view)** — sidebar with quick launch, persona chips, and a live session board; the main area hosts a full PTY terminal:
+
+![Main dashboard — tabs view](./docs/screenshots/main-tabs.png)
+
+**Split view** — run two sessions side by side; drag the divider to resize both terminals live:
+
+![Split view — two terminals side by side](./docs/screenshots/split-view.png)
+
+**Launch dialog** — pick a persona, then optionally override working dir, model, and title before starting the session:
+
+![Launch session dialog](./docs/screenshots/launch-dialog.png)
+
 ## Install
 
 **Requirements**

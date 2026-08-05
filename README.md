@@ -4,6 +4,20 @@
 
 本地 Web 控制台，用于并排运行多个 AI 编码 Agent CLI（`claude`、`opencode`、`openclaw`、`hermes`、`codex`）和普通 shell 终端。真实 PTY 终端、刷新浏览器会话不丢、Persona 预设一键拉起、多标签 / 分屏布局。
 
+## 界面预览
+
+**主界面（标签视图）** — 左侧边栏包含快捷启动、Persona 预设和实时会话看板；主区域是完整的 PTY 终端：
+
+![主界面 — 标签视图](./docs/screenshots/main-tabs.png)
+
+**分屏视图** — 两个会话并排运行，拖拽分隔条可实时调整两侧终端尺寸：
+
+![分屏视图 — 两个终端并排](./docs/screenshots/split-view.png)
+
+**启动对话框** — 选择 Persona 后，可在启动前覆盖工作目录、模型和标题：
+
+![启动会话对话框](./docs/screenshots/launch-dialog.png)
+
 ## 安装
 
 **环境要求**
