@@ -161,6 +161,24 @@ export default function TerminalView({ sessionId, active }) {
 
     term.onData((data) => wsClient.input(sessionId, data));
 
+    // Prevent browser from intercepting terminal shortcuts. Many browsers bind
+    // Ctrl+O (open file), Ctrl+S (save), Ctrl+W (close tab), etc., which breaks
+    // TUI apps like Claude Code that need those keys. When the terminal has
+    // focus, preventDefault on intercepted keys so they reach the PTY instead.
+    term.attachCustomKeyEventHandler((e) => {
+      // Only intercept when Ctrl/Cmd is pressed (not plain typing).
+      if (!e.ctrlKey && !e.metaKey) return true;
+      // List of keys the browser commonly intercepts that TUIs expect to receive.
+      // Add more as needed for other CLI shortcuts.
+      const intercepted = ['o', 'O', 's', 'S', 'w', 'W', 'n', 'N', 't', 'T', 'p', 'P'];
+      if (intercepted.includes(e.key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return true; // still send to terminal
+      }
+      return true;
+    });
+
     // Leave follow mode only on a deliberate upward scroll; rejoin whenever
     // the viewport comes back near the bottom (wheel, scrollbar, or scroll).
     const onWheel = (e) => {
