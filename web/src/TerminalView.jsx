@@ -146,9 +146,14 @@ export default function TerminalView({ sessionId, active }) {
     };
     resyncRef.current = resyncIfStale;
 
-    // Compute an initial size for the attach (falls back to 80x24).
-    let cols = 80;
-    let rows = 24;
+    // Compute an initial size for the attach. When the host hasn't been laid
+    // out yet (clientWidth 0 — the normal case on a fresh page load), attach
+    // *without* dimensions so the server keeps the PTY's current size. The old
+    // 80x24 fallback bounced every re-attached session through a tiny resize
+    // (real size -> 80x24 -> real size one frame later), forcing two SIGWINCH
+    // reflows on every CLI each time the dashboard tab was reopened.
+    let cols;
+    let rows;
     if (hostRef.current && hostRef.current.clientWidth > 0) {
       try {
         fit.fit();
@@ -159,7 +164,22 @@ export default function TerminalView({ sessionId, active }) {
       }
     }
 
-    term.onData((data) => wsClient.input(sessionId, data));
+    // Depth of snapshot replays currently being parsed (reconnects can overlap).
+    // While >0, xterm's onData output is NOT forwarded to the PTY: replaying
+    // history makes xterm.js re-answer every terminal query recorded in it
+    // (device attributes, cursor position, colors…), and forwarding those
+    // replies would type stray ESC-sequences into the running CLI — Claude
+    // Code reads the ESCs as the Escape key and aborts its in-flight API
+    // request. The server strips queries from snapshots too (replayFilter.js);
+    // this gate covers partial sequences that survive scrollback trimming and
+    // keeps a few ms of replay-time keystrokes from interleaving mid-redraw.
+    // Answers to live queries (output received after attach) still flow.
+    let replayDepth = 0;
+
+    term.onData((data) => {
+      if (replayDepth > 0) return;
+      wsClient.input(sessionId, data);
+    });
 
     // Prevent browser from intercepting terminal shortcuts. Many browsers bind
     // Ctrl+O (open file), Ctrl+S (save), Ctrl+W (close tab), etc., which breaks
@@ -203,8 +223,16 @@ export default function TerminalView({ sessionId, active }) {
           term.reset();
           followRef.current = true;
           // write() is async — scroll to bottom once the snapshot is rendered
-          // so the replayed prompt/input box is in view.
-          if (frame.snapshot) term.write(frame.snapshot, () => term.scrollToBottom());
+          // so the replayed prompt/input box is in view. The gate opens in the
+          // same callback: by then every auto-reply the replay provoked has
+          // been emitted (and dropped).
+          if (frame.snapshot) {
+            replayDepth += 1;
+            term.write(frame.snapshot, () => {
+              replayDepth -= 1;
+              term.scrollToBottom();
+            });
+          }
           requestAnimationFrame(tryFit);
           break;
         case 'output':

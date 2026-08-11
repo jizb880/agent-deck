@@ -1,5 +1,6 @@
 import { WebSocketServer } from 'ws';
 import { sessionManager } from './SessionManager.js';
+import { stripTerminalQueries } from './replayFilter.js';
 
 /**
  * WebSocket protocol (JSON text frames, all keyed by sessionId where relevant):
@@ -71,11 +72,17 @@ export function attachWebSocket(server) {
 
       if (cols && rows) session.resize(cols, rows);
 
-      // Replay history so the client can redraw the full terminal.
+      // Replay history so the client can redraw the full terminal. Queries are
+      // stripped first: xterm.js would otherwise *answer* every capability
+      // query fossilized in the history (DA, DSR, DECRQM, OSC color…), and the
+      // client would forward those answer bytes as fresh keyboard input to the
+      // CLI — stray ESCs that abort an agent's in-flight API request. That is
+      // exactly what made every busy agent report an API error the moment a
+      // reopened dashboard tab re-attached its sessions.
       send({
         type: 'attached',
         sessionId,
-        snapshot: session.getScrollback(),
+        snapshot: stripTerminalQueries(session.getScrollback()),
         session: session.toJSON(),
       });
 
@@ -164,15 +171,14 @@ export function attachWebSocket(server) {
       }
     });
 
-    ws.on('close', () => {
-      for (const off of subs.values()) off();
-      subs.clear();
-    });
-
-    ws.on('error', () => {
-      for (const off of subs.values()) off();
-      subs.clear();
-    });
+    // Tear down through unsubscribe() so any backpressure pause this socket
+    // still holds is released immediately, not left to the drain poller — a
+    // paused PTY blocks the CLI's stdout and stalls its event loop.
+    const teardown = () => {
+      for (const sessionId of [...subs.keys()]) unsubscribe(sessionId);
+    };
+    ws.on('close', teardown);
+    ws.on('error', teardown);
   });
 
   return wss;
