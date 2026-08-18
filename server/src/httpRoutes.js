@@ -4,8 +4,11 @@ import { sessionManager } from './SessionManager.js';
 import { homeDir } from './config.js';
 import { listResumableSessions } from './claudeSessions.js';
 import { detectCliKinds } from './cliDetect.js';
+import { registerFileRoutes } from './fileRoutes.js';
 
 export function registerRoutes(app) {
+  // Register file and git routes
+  registerFileRoutes(app);
   app.get('/api/health', async () => ({ ok: true, home: homeDir(), platform: process.platform }));
 
   // Every known CLI kind plus whether it is actually installed, so the UI can

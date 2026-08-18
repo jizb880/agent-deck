@@ -8,7 +8,7 @@ const clampSidebar = (w) => Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, w));
 import { api } from './api.js';
 import { wsClient } from './wsClient.js';
 import Sidebar from './Sidebar.jsx';
-import TerminalGrid from './TerminalGrid.jsx';
+import RightPanel from './RightPanel.jsx';
 import LaunchDialog from './LaunchDialog.jsx';
 import PersonaEditor from './PersonaEditor.jsx';
 
@@ -18,10 +18,10 @@ export default function App() {
   const [cliKinds, setCliKinds] = useState([]);
   const [connected, setConnected] = useState(false);
 
-  // openTabs: ordered session ids shown in the grid. activeId: focused tab.
-  const [openTabs, setOpenTabs] = useState([]);
+  // activeId: currently selected session
   const [activeId, setActiveId] = useState(null);
-  const [layout, setLayout] = useState('tabs'); // 'tabs' | 'split'
+  // currentView: which view to show in right panel
+  const [currentView, setCurrentView] = useState('terminal'); // 'terminal' | 'files' | 'git'
 
   // Client-side display order for the sidebar session list (drag to reorder).
   // The server roster is unordered from the UI's perspective; new sessions
@@ -97,26 +97,16 @@ export default function App() {
   }, [toast]);
 
   const openSession = useCallback((id) => {
-    setOpenTabs((tabs) => (tabs.includes(id) ? tabs : [...tabs, id]));
     setActiveId(id);
+    // Switch to terminal view when opening a session
+    setCurrentView('terminal');
   }, []);
-
-  const closeTab = useCallback(
-    (id) => {
-      setOpenTabs((tabs) => {
-        const next = tabs.filter((t) => t !== id);
-        setActiveId((cur) => (cur === id ? next[next.length - 1] || null : cur));
-        return next;
-      });
-    },
-    []
-  );
 
   const handleCreate = useCallback(
     async (payload) => {
       const session = await api.createSession(payload);
       setLaunch(null);
-      // Seed the roster with the POST response so the new tab renders
+      // Seed the roster with the POST response so the session appears
       // immediately instead of waiting on (or racing) the WS broadcast;
       // the next roster frame reconciles authoritative state.
       setSessions((prev) =>
@@ -137,40 +127,20 @@ export default function App() {
     }
   }, [handleCreate]);
 
-  // Sidebar「停止」: terminate the CLI (SIGTERM) and close its tab. The session
+  // Sidebar「停止」: terminate the CLI (SIGTERM). The session
   // lingers in the sidebar as 已退出 (removable / auto-reaped) so final output
   // stays readable.
-  const closeSession = useCallback(
-    (id) => {
-      api.killSession(id, 'SIGTERM').catch(() => {});
-      closeTab(id);
-    },
-    [closeTab]
-  );
+  const closeSession = useCallback((id) => {
+    api.killSession(id, 'SIGTERM').catch(() => {});
+    // If this was the active session, clear it
+    setActiveId((cur) => (cur === id ? null : cur));
+  }, []);
 
-  // Tab × in the grid: plain terminals die with their tab, but Claude Code /
-  // OpenCode sessions keep running — closing the tab just detaches the view;
-  // the session stays live in the sidebar and can be reopened.
-  const handleTabClose = useCallback(
-    (id) => {
-      const s = sessions.find((x) => x.id === id);
-      if (!s || s.kind === 'terminal') {
-        closeSession(id);
-      } else {
-        closeTab(id);
-      }
-    },
-    [sessions, closeSession, closeTab]
-  );
-
-  const handleRemove = useCallback(
-    async (id) => {
-      await api.removeSession(id).catch(() => {});
-      closeTab(id);
-      wsClient.requestList();
-    },
-    [closeTab]
-  );
+  const handleRemove = useCallback(async (id) => {
+    await api.removeSession(id).catch(() => {});
+    setActiveId((cur) => (cur === id ? null : cur));
+    wsClient.requestList();
+  }, []);
 
   // Rename a session: optimistic local update, then persist; the WS roster
   // broadcast reconciles authoritative state for every client (sidebar + tabs).
@@ -182,11 +152,12 @@ export default function App() {
     });
   }, []);
 
-  // Drop tabs whose session vanished from the roster.
+  // Clear active session if it vanished from the roster.
   useEffect(() => {
-    const live = new Set(sessions.map((s) => s.id));
-    setOpenTabs((tabs) => tabs.filter((t) => live.has(t)));
-  }, [sessions]);
+    if (activeId && !sessions.some((s) => s.id === activeId)) {
+      setActiveId(null);
+    }
+  }, [sessions, activeId]);
 
   // Keep sessionOrder in sync with the roster: drop gone ids, append new ones.
   useEffect(() => {
@@ -215,10 +186,6 @@ export default function App() {
     next.splice(to, 0, fromId);
     return next;
   };
-
-  const reorderTabs = useCallback((fromId, toId) => {
-    setOpenTabs((tabs) => moveId(tabs, fromId, toId));
-  }, []);
 
   const reorderSessions = useCallback((fromId, toId) => {
     setSessionOrder((order) => moveId(order, fromId, toId));
@@ -252,35 +219,11 @@ export default function App() {
       />
 
       <main className="main">
-        <div className="topbar">
-          <div className="brand">Agent Control</div>
-          <div className="layout-toggle">
-            <button
-              className={layout === 'tabs' ? 'seg active' : 'seg'}
-              onClick={() => setLayout('tabs')}
-            >
-              标签 Tabs
-            </button>
-            <button
-              className={layout === 'split' ? 'seg active' : 'seg'}
-              onClick={() => setLayout('split')}
-            >
-              分屏 Split
-            </button>
-          </div>
-          <div className={connected ? 'conn ok' : 'conn bad'}>
-            {connected ? '● connected' : '○ reconnecting'}
-          </div>
-        </div>
-
-        <TerminalGrid
-          openTabs={openTabs}
-          activeId={activeId}
+        <RightPanel
+          currentView={currentView}
+          onViewChange={setCurrentView}
+          activeSession={activeId}
           sessions={sessions}
-          layout={layout}
-          onActivate={setActiveId}
-          onCloseTab={handleTabClose}
-          onReorderTab={reorderTabs}
         />
       </main>
 

@@ -203,9 +203,6 @@ export default function Sidebar({
       <section className="side-section">
         <div className="side-head">
           <span>快捷启动 Quick Launch</span>
-          <button className="mini" title="新建角色" onClick={onNewPersona}>
-            + 角色
-          </button>
         </div>
         <div className="quick-launch">
           {/* One button per agent CLI actually installed on this machine. An
@@ -230,24 +227,6 @@ export default function Sidebar({
           <div className="muted small field-hint">
             未检测到已安装的 Agent CLI（claude / opencode / openclaw / hermes / codex）。
             安装并确保其在 PATH 中，然后刷新页面。
-          </div>
-        )}
-        {personas.length > 0 && (
-          <div className="persona-chips">
-            {personas.map((p) => (
-              <div className="persona-chip" key={p.id} style={{ borderLeftColor: p.color }}>
-                <button
-                  className="persona-chip-launch"
-                  title={`以「${p.name}」启动（${KIND_LABEL[p.kind]}${p.model ? ` · ${p.model}` : ''}）`}
-                  onClick={() => onLaunchPersona(p)}
-                >
-                  {p.name}
-                </button>
-                <button className="icon-btn" title="编辑角色" onClick={() => onEditPersona(p)}>
-                  ✎
-                </button>
-              </div>
-            ))}
           </div>
         )}
       </section>
