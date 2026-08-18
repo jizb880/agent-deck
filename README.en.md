@@ -2,19 +2,31 @@
 
 **English** | [简体中文](./README.md)
 
-A local web dashboard for running multiple AI coding agent CLIs (`claude`, `opencode`, `openclaw`, `hermes`, `codex`) and plain shell terminals side by side. Real PTY terminals, sessions survive browser refreshes, one-click persona presets, tabs / split-pane layout.
+A local web dashboard for managing multiple AI coding agent CLIs (`claude`, `opencode`, `openclaw`, `hermes`, `codex`) and plain shell terminals. Real PTY terminals, sessions survive browser refreshes, one-click persona presets, plus a built-in file explorer and Git status view.
 
 ## Screenshots
 
-**Main dashboard (Tabs view)** — sidebar with quick launch, persona chips, and a live session board; the main area hosts a full PTY terminal:
+**Terminal view** — sidebar with quick launch, persona chips, and a live session board; the main area hosts a full PTY terminal with ANSI colors and interactive TUIs:
 
-![Main dashboard — tabs view](./docs/screenshots/main-tabs.png)
+![Terminal view](./docs/screenshots/terminal.png)
 
-**Split view** — run two sessions side by side; drag the divider to resize both terminals live:
+**File explorer** — browse the active session's working directory without leaving the dashboard (`node_modules`, `.git`, `dist`, and `build` are skipped):
 
-![Split view — two terminals side by side](./docs/screenshots/split-view.png)
+![File explorer](./docs/screenshots/file-explorer.png)
 
-**Launch dialog** — pick a persona, then optionally override working dir, model, and title before starting the session:
+Click a file for a read-only preview of its contents:
+
+![File preview](./docs/screenshots/file-viewer.png)
+
+**Git view** — list working-tree changes, labelled modified / added / deleted / untracked:
+
+![Git status](./docs/screenshots/git-status.png)
+
+Click any file to see its full diff against `HEAD`:
+
+![Git diff viewer](./docs/screenshots/git-diff.png)
+
+**Launch dialog** — pick a persona, then optionally override working dir, model, and title, or resume a past conversation:
 
 ![Launch session dialog](./docs/screenshots/launch-dialog.png)
 
@@ -75,8 +87,10 @@ taskkill /PID <pid> /F
 - **Session persistence** — PTYs are hosted by the backend with 1 MiB scrollback; refresh/disconnect, then re-attach and replay full history. (A backend restart ends sessions — see "Advanced".)
 - **Personas** — save presets (system prompt, model, working dir, env vars, extra args) and launch them with one click.
 - **Resume past conversations** — when starting a Claude Code session, pick a previous conversation for that directory from a dropdown (newest first, with a preview of the opening prompt); leave it blank for a fresh session. Resumed via `--fork-session`, so the original transcript is never rewritten.
-- **Plain terminals** — open your own shell as a tab next to agent sessions (login shell on macOS/Linux, PowerShell or `cmd.exe` on Windows).
-- **Session board** — live status per session (starting / running / busy / idle / exited); tabs or resizable split panes with live terminal resize.
+- **Plain terminals** — open your own shell as a session alongside agent sessions (login shell on macOS/Linux, PowerShell or `cmd.exe` on Windows).
+- **Session board** — live status per session (starting / running / busy / idle / exited); click one to switch to it, with live terminal resize.
+- **File explorer** — the main area's **Files** view lists the active session's working directory as a tree; click a file for a read-only preview. `node_modules`, `.git`, `dist`, and `build` are skipped.
+- **Git view** — the main area's **Git** view lists working-tree changes with a status label (modified / added / deleted / untracked); click a file for its full diff against `HEAD`. Directories that aren't Git repositories say so explicitly.
 - **Per-session workspace** — each session can target a different project directory.
 - **Auto-detected CLIs** — Quick Launch shows a button per agent CLI actually installed (`claude` / `opencode` / `openclaw` / `hermes` / `codex`), resolved through your login shell's PATH so version-manager and `~/.local/bin` installs are found. Nothing you don't have is offered.
 - **Codex YOLO mode** — an opt-in checkbox in the launch dialog that starts Codex with `--yolo`. That flag is an undocumented alias for `--dangerously-bypass-approvals-and-sandbox`: it skips every confirmation **and** disables the sandbox, so Codex can read and write any file on the machine, run commands and reach the network without asking. Off by default; use it only in directories you trust. Sandbox and approval policy for normal launches stay in `~/.codex/config.toml`.
@@ -84,10 +98,10 @@ taskkill /PID <pid> /F
 
 ## Usage
 
-1. **Quick Launch** (sidebar): one button per agent CLI detected on this machine, plus a persona chip for each preset and **+ 终端** for a plain shell tab. A CLI you don't have installed gets no button, so a launch can't fail at spawn time.
+1. **Quick Launch** (sidebar): one button per agent CLI detected on this machine, plus a persona chip for each preset and **+ 终端** for a plain shell session. A CLI you don't have installed gets no button, so a launch can't fail at spawn time.
 2. The launch dialog lets you override working dir / model / title, and pick a past conversation to resume (blank = new blank session).
-3. Switch the main area between **Tabs** and **Split**; drag split handles to resize live.
-4. Sidebar **停止** and the tab's **×** both terminate the CLI and close the tab. Exited sessions linger briefly, then are auto-reaped.
+3. Click any session in the sidebar to switch to it; the toolbar above the main area switches between **终端 Terminal**, **文件 Files**, and **Git**, all scoped to that session's working directory. Drag the sidebar's right edge to resize it.
+4. Sidebar **停止** terminates the CLI and closes the session. Exited sessions linger briefly, then are auto-reaped.
 5. Refreshing the browser never interrupts sessions.
 
 ### Persona → CLI flag mapping

@@ -3,7 +3,7 @@
   "version": "1.6.0",
   "private": true,
   "type": "module",
-  "description": "Local dashboard to manage multiple Claude Code + OpenCode CLI sessions (PTY, personas, split panes)",
+  "description": "Local dashboard to manage multiple AI coding agent CLI sessions (PTY, personas, file explorer, git)",
   "scripts": {
     "setup": "node scripts/setup.mjs",
     "dev:server": "npm --prefix server run dev",

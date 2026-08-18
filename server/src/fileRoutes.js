@@ -143,7 +143,10 @@ async function buildFileTree(basePath, currentPath, depth) {
 
 // 解析git status --porcelain输出
 function parseGitStatus(output) {
-  const lines = output.trim().split('\n').filter(Boolean);
+  // Only trim the trailing newline: porcelain lines start with the two status
+  // columns, and a leading space (e.g. " M path") is significant — trimming it
+  // would shift the path slice by one character.
+  const lines = output.split('\n').filter(Boolean);
   return lines.map(line => {
     const status = line.substring(0, 2);
     const filePath = line.substring(3);

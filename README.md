@@ -2,19 +2,31 @@
 
 [English](./README.en.md) | **简体中文**
 
-本地 Web 控制台，用于并排运行多个 AI 编码 Agent CLI（`claude`、`opencode`、`openclaw`、`hermes`、`codex`）和普通 shell 终端。真实 PTY 终端、刷新浏览器会话不丢、Persona 预设一键拉起、多标签 / 分屏布局。
+本地 Web 控制台，用于管理多个 AI 编码 Agent CLI（`claude`、`opencode`、`openclaw`、`hermes`、`codex`）和普通 shell 终端。真实 PTY 终端、刷新浏览器会话不丢、Persona 预设一键拉起，并内置文件浏览器与 Git 状态视图。
 
 ## 界面预览
 
-**主界面（标签视图）** — 左侧边栏包含快捷启动、Persona 预设和实时会话看板；主区域是完整的 PTY 终端：
+**终端视图** — 左侧边栏包含快捷启动、Persona 预设和实时会话看板；主区域是完整的 PTY 终端，ANSI 颜色与交互式 TUI 均可正常渲染：
 
-![主界面 — 标签视图](./docs/screenshots/main-tabs.png)
+![终端视图](./docs/screenshots/terminal.png)
 
-**分屏视图** — 两个会话并排运行，拖拽分隔条可实时调整两侧终端尺寸：
+**文件浏览器** — 无需离开控制台即可浏览当前会话工作目录的文件树（自动跳过 `node_modules`、`.git`、`dist`、`build`）：
 
-![分屏视图 — 两个终端并排](./docs/screenshots/split-view.png)
+![文件浏览器](./docs/screenshots/file-explorer.png)
 
-**启动对话框** — 选择 Persona 后，可在启动前覆盖工作目录、模型和标题：
+点击文件即可只读预览内容：
+
+![文件预览](./docs/screenshots/file-viewer.png)
+
+**Git 视图** — 列出工作区改动，并标注修改 / 新增 / 删除 / 未跟踪状态：
+
+![Git 状态](./docs/screenshots/git-status.png)
+
+点击任意文件查看该文件相对 `HEAD` 的完整 diff：
+
+![Git 差异查看](./docs/screenshots/git-diff.png)
+
+**启动对话框** — 选择 Persona 后，可在启动前覆盖工作目录、模型和标题，也可挑一条历史会话继续：
 
 ![启动会话对话框](./docs/screenshots/launch-dialog.png)
 
@@ -74,8 +86,10 @@ taskkill /PID <pid> /F
 - **会话持久化** — PTY 由后端长驻进程托管，保留 1 MiB 滚屏历史；刷新/断线后重新附着并回放完整历史。（后端重启会结束会话，见「进阶」。）
 - **Persona 预设** — 保存系统提示词、模型、工作目录、环境变量、额外参数，快捷启动区一键拉起。
 - **恢复历史会话** — 新建 Claude Code 会话时可从下拉列表挑一条该目录下的历史对话（按时间倒序，带首条提问摘要）继续；留空即新建空白会话。以 `--fork-session` 恢复，原记录不会被改写。
-- **普通终端** — 「+ 终端」按钮打开 shell 页签（macOS/Linux 为登录 shell，Windows 为 PowerShell 或 `cmd.exe`），与 Agent 会话并排使用。
-- **会话看板** — 侧边栏实时显示每个会话状态（启动中 / 运行中 / 处理中 / 空闲 / 已退出）；主区域支持标签或分屏，拖拽实时同步终端尺寸。
+- **普通终端** — 「+ 终端」按钮打开 shell 会话（macOS/Linux 为登录 shell，Windows 为 PowerShell 或 `cmd.exe`），与 Agent 会话一同管理。
+- **会话看板** — 侧边栏实时显示每个会话状态（启动中 / 运行中 / 处理中 / 空闲 / 已退出）；点击即可切换到该会话，终端尺寸随窗口实时同步。
+- **文件浏览器** — 主区域「文件」视图列出当前会话工作目录的文件树，点击文件只读预览；`node_modules`、`.git`、`dist`、`build` 自动跳过。
+- **Git 视图** — 主区域「Git」视图列出工作区改动并标注状态（修改 / 新增 / 删除 / 未跟踪），点击文件查看相对 `HEAD` 的完整 diff。非 Git 仓库的目录会明确提示。
 - **独立工作区** — 每个会话可指向不同项目目录。
 - **自动检测 CLI** — 快捷启动只显示本机实际安装的 Agent CLI（`claude` / `opencode` / `openclaw` / `hermes` / `codex`），并通过登录 shell 的 PATH 解析，因此版本管理器和 `~/.local/bin` 下的安装也能找到。没装的不会出现。
 - **Codex YOLO 模式** — 启动对话框中的可选勾选框，以 `--yolo` 启动 Codex。该参数是 `--dangerously-bypass-approvals-and-sandbox` 的未公开别名：跳过全部操作确认**并**关闭沙箱，Codex 可直接读写本机任意文件、执行命令、访问网络，全程不再询问。默认关闭，请仅在可信目录使用。常规启动的沙箱与审批策略仍由 `~/.codex/config.toml` 控制。
@@ -83,10 +97,10 @@ taskkill /PID <pid> /F
 
 ## 使用
 
-1. 侧边栏**快捷启动**：每个检测到的 Agent CLI 一个按钮，加上各预设角色的 chip，以及 **+ 终端** 打开 shell 页签。未安装的 CLI 不会显示按钮，因此不会出现点了才在启动时失败的情况。
+1. 侧边栏**快捷启动**：每个检测到的 Agent CLI 一个按钮，加上各预设角色的 chip，以及 **+ 终端** 打开 shell 会话。未安装的 CLI 不会显示按钮，因此不会出现点了才在启动时失败的情况。
 2. 启动对话框可覆盖工作目录 / 模型 / 标题，并可选择要恢复的历史会话（留空 = 新建空白会话）。
-3. 主区域顶部切换「标签 / 分屏」；分屏下拖拽分隔条实时调整尺寸。
-4. 侧边栏「**停止**」与页签「**×**」效果相同：终止 CLI 并关闭页签。已退出会话短暂保留后自动回收。
+3. 侧边栏点击任一会话切换过去；主区域顶部在「终端 / 文件 / Git」三个视图间切换，均作用于当前会话的工作目录。拖拽侧边栏右边缘可调整其宽度。
+4. 侧边栏「**停止**」终止 CLI 并关闭会话。已退出会话短暂保留后自动回收。
 5. 刷新浏览器不会中断会话。
 
 ### Persona → CLI 参数映射
