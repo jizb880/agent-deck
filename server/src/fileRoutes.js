@@ -141,15 +141,54 @@ async function buildFileTree(basePath, currentPath, depth) {
   return null;
 }
 
+// Decode a git-quoted path: strip outer double quotes and unescape escape sequences.
+// Git quotes any path containing non-ASCII bytes or special characters.  Non-ASCII
+// bytes are represented as individual \NNN octal escapes — a multi-byte UTF-8
+// sequence becomes several consecutive octal groups.  We must collect consecutive
+// groups into a Buffer and decode as UTF-8, rather than treating each group as a
+// Unicode code point (which would produce garbage for Chinese etc.)
+function decodeGitPath(raw) {
+  if (!raw.startsWith('"')) return raw;
+  const inner = raw.slice(1, -1); // strip surrounding double quotes
+
+  let result = '';
+  let i = 0;
+  while (i < inner.length) {
+    if (inner[i] !== '\\') {
+      result += inner[i++];
+      continue;
+    }
+    // Collect all consecutive octal groups into one Buffer so that multi-byte
+    // UTF-8 sequences (e.g. \346\212\200 → 汉字) decode correctly.
+    const bytes = [];
+    while (i < inner.length && inner[i] === '\\' && /[0-7]/.test(inner[i + 1] ?? '')) {
+      bytes.push(parseInt(inner.slice(i + 1, i + 4), 8));
+      i += 4;
+    }
+    if (bytes.length) {
+      result += Buffer.from(bytes).toString('utf8');
+      continue;
+    }
+    // Other single-char escapes git may emit
+    const esc = inner[i + 1];
+    const simple = { n: '\n', t: '\t', r: '\r', '"': '"', '\\': '\\', a: '\x07', b: '\x08' };
+    result += simple[esc] ?? ('\\' + esc);
+    i += 2;
+  }
+  return result;
+}
+
 // 解析git status --porcelain输出
 function parseGitStatus(output) {
-  // Only trim the trailing newline: porcelain lines start with the two status
-  // columns, and a leading space (e.g. " M path") is significant — trimming it
-  // would shift the path slice by one character.
+  // Only split on newlines — never trim the output. Porcelain lines start with
+  // two status columns; a leading space (e.g. " M path") is significant and
+  // trimming it would shift the path slice by one character.
   const lines = output.split('\n').filter(Boolean);
   return lines.map(line => {
     const status = line.substring(0, 2);
-    const filePath = line.substring(3);
+    // git quotes paths containing non-ASCII characters — decode them so that
+    // the path we store matches what git and the filesystem actually expect.
+    const filePath = decodeGitPath(line.substring(3));
 
     let statusType = 'modified';
     if (status.includes('A')) statusType = 'added';
