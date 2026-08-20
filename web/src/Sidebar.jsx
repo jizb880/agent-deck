@@ -90,7 +90,7 @@ function SessionRow({
 
   const commit = () => {
     setEditing(false);
-    const title = draft.trim();
+    const title = draft.replace(/\s+/g, ' ').trim();
     if (title && title !== session.title) onRename(session.id, title);
   };
 
@@ -117,7 +117,14 @@ function SessionRow({
             ref={inputRef}
             className="sess-rename"
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              const cleaned = e.target.value.replace(/\s+/g, ' ');
+              setDraft(cleaned);
+            }}
+            onCompositionEnd={(e) => {
+              const cleaned = e.target.value.replace(/\s+/g, ' ');
+              setDraft(cleaned);
+            }}
             onClick={(e) => e.stopPropagation()}
             onBlur={commit}
             onKeyDown={(e) => {
