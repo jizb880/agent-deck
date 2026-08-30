@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { wsClient } from './wsClient.js';
+import { OutputCoalescer } from './outputCoalescer.js';
 
 // Light terminal theme (GitHub-light-ish ANSI palette tuned for a white bg).
 const LIGHT_THEME = {
@@ -164,6 +165,15 @@ export default function TerminalView({ sessionId, active }) {
       }
     }
 
+    // Batches raw PTY output into whole repaint frames before term.write();
+    // see outputCoalescer.js. The write callback keeps the original follow-
+    // mode behavior: Claude Code redraws via scroll regions / in-place
+    // updates that don't always trigger xterm's own auto-scroll, and a reflow
+    // can strand the viewport above the bottom — follow mode drags it back.
+    const coalescer = new OutputCoalescer((data) => {
+      term.write(data, followRef.current ? () => term.scrollToBottom() : undefined);
+    });
+
     // Depth of snapshot replays currently being parsed (reconnects can overlap).
     // While >0, xterm's onData output is NOT forwarded to the PTY: replaying
     // history makes xterm.js re-answer every terminal query recorded in it
@@ -180,6 +190,23 @@ export default function TerminalView({ sessionId, active }) {
       if (replayDepth > 0) return;
       wsClient.input(sessionId, data);
     });
+
+    // Answer the synchronized-output probe. On launch Claude Code asks DECRQM
+    // `CSI ?2026$p` and only brackets its repaints with mode 2026 when the
+    // terminal reports the mode as recognized — xterm.js implements neither
+    // DECRQM nor mode 2026, so the probe went unanswered and Claude Code
+    // repainted unsynchronized. Reply "recognized, currently reset"
+    // (`?2026;2$y`) for 2026 only; every other mode stays unanswered exactly
+    // as before. Replay-gated like onData so a query that survives the
+    // server-side snapshot filtering can't type into the CLI.
+    term.parser.registerCsiHandler(
+      { prefix: '?', intermediates: '$', final: 'p' },
+      (params) => {
+        if (params[0] !== 2026) return false;
+        if (replayDepth === 0) wsClient.input(sessionId, '\x1b[?2026;2$y');
+        return true;
+      }
+    );
 
     // Prevent browser from intercepting terminal shortcuts. Many browsers bind
     // Ctrl+O (open file), Ctrl+S (save), Ctrl+W (close tab), etc., which breaks
@@ -220,6 +247,7 @@ export default function TerminalView({ sessionId, active }) {
     const handler = (frame) => {
       switch (frame.type) {
         case 'attached':
+          coalescer.reset();
           term.reset();
           followRef.current = true;
           // write() is async — scroll to bottom once the snapshot is rendered
@@ -236,16 +264,19 @@ export default function TerminalView({ sessionId, active }) {
           requestAnimationFrame(tryFit);
           break;
         case 'output':
-          // Keep the viewport pinned while output streams. Claude Code
-          // redraws via scroll regions / in-place updates that don't always
-          // trigger xterm's own auto-scroll, and a reflow can strand the
-          // viewport above the bottom — follow mode drags it back.
-          term.write(frame.data, followRef.current ? () => term.scrollToBottom() : undefined);
+          // Through the coalescer: synchronized-update frames (mode 2026) and
+          // sub-frame bursts reach xterm as one write, so an in-place TUI
+          // repaint (Claude Code with a long transcript) renders atomically
+          // instead of flashing the cursor through its intermediate states.
+          coalescer.push(frame.data);
           break;
         case 'error':
+          // Render ahead of held output would reorder the stream — drain first.
+          coalescer.flush();
           term.write(`\r\n\x1b[31m[${frame.message || 'error'}]\x1b[0m\r\n`);
           break;
         case 'exit':
+          coalescer.flush();
           term.write(
             `\r\n\x1b[33m[session exited: code=${frame.exitCode ?? '?'}` +
               (frame.exitSignal ? ` signal=${frame.exitSignal}` : '') +
@@ -281,6 +312,7 @@ export default function TerminalView({ sessionId, active }) {
       hostRef.current?.removeEventListener('wheel', onWheel);
       if (roRef.current) roRef.current.disconnect();
       if (detachRef.current) detachRef.current();
+      coalescer.dispose();
       term.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
