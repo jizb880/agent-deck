@@ -63,7 +63,7 @@ export default function RightPanel({
           <>
             {currentView === 'terminal' && (
               <div className="terminal-container">
-                <TerminalView sessionId={activeSession} active={true} />
+                <TerminalView sessionId={activeSession} active={true} kind={session.kind} />
               </div>
             )}
             {currentView === 'files' && (

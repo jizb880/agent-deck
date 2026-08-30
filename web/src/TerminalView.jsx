@@ -39,12 +39,15 @@ const LIGHT_THEME = {
  * container, retrying until the container actually has a size (so a freshly
  * mounted pane never advertises 0 cols to the backend).
  */
-export default function TerminalView({ sessionId, active }) {
+export default function TerminalView({ sessionId, active, kind }) {
   const hostRef = useRef(null);
   const termRef = useRef(null);
   const fitRef = useRef(null);
   const detachRef = useRef(null);
   const roRef = useRef(null);
+  // Mirrors the `active` prop for handlers created in the mount effect (which
+  // must not re-run on tab switches — that would tear down the terminal).
+  const activeRef = useRef(active);
   // Exposed so the "tab became active" effect can reuse the same retry-based
   // refit the mount path uses, instead of a single fit that silently fails if
   // layout hasn't settled yet.
@@ -213,6 +216,18 @@ export default function TerminalView({ sessionId, active }) {
     // TUI apps like Claude Code that need those keys. When the terminal has
     // focus, preventDefault on intercepted keys so they reach the PTY instead.
     term.attachCustomKeyEventHandler((e) => {
+      // Shift+Enter must insert a newline, not submit. Native terminals get
+      // that via Claude Code's own /terminal-setup, which binds the chord to
+      // send ESC+CR; xterm.js has no such binding and emits a plain CR — on
+      // the web that *sent* the message instead of breaking the line. Send
+      // the same ESC+CR here (verified: claude inserts a newline). Scoped to
+      // Claude sessions: shells like PSReadLine read a lone ESC as "clear
+      // line", which would make the chord destructive in a plain terminal.
+      if (kind === 'claude' && e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.type === 'keydown' && replayDepth === 0) wsClient.input(sessionId, '\x1b\r');
+        e.preventDefault();
+        return false; // swallow keydown/keypress/keyup so xterm never adds a CR
+      }
       // Only intercept when Ctrl/Cmd is pressed (not plain typing).
       if (!e.ctrlKey && !e.metaKey) return true;
       // List of keys the browser commonly intercepts that TUIs expect to receive.
@@ -294,6 +309,30 @@ export default function TerminalView({ sessionId, active }) {
     roRef.current = ro;
     requestAnimationFrame(tryFit);
 
+    // Dimension reconciliation. The roster broadcast carries each session's
+    // server-side PTY cols/rows; if they drift from what this terminal
+    // actually shows (a resize frame silently dropped while the socket was
+    // reconnecting, a fit that never landed while the pane had no size…), the
+    // CLI lays text out for a width the user isn't seeing. Claude Code then
+    // treats a soft-wrapped input line as one row — ArrowDown stops moving
+    // down within the input and falls through to history-next. Re-assert this
+    // terminal's real size whenever the roster disagrees. Gated to the active
+    // pane of the focused document so two windows showing the same session
+    // don't fight over the PTY size, and throttled as belt-and-braces against
+    // resize/roster feedback loops.
+    let lastReconcile = 0;
+    const offRoster = wsClient.onRoster((sessions) => {
+      if (!activeRef.current || document.hidden || !document.hasFocus()) return;
+      const el = hostRef.current;
+      if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
+      const s = sessions.find((x) => x.id === sessionId);
+      if (!s || (s.cols === term.cols && s.rows === term.rows)) return;
+      const now = Date.now();
+      if (now - lastReconcile < 1000) return;
+      lastReconcile = now;
+      wsClient.resize(sessionId, term.cols, term.rows);
+    });
+
     // Re-fit when the window regains focus/visibility — the same recovery a
     // tab switch performs, without requiring one. Covers viewport desyncs
     // that accumulate while the page is backgrounded.
@@ -310,6 +349,7 @@ export default function TerminalView({ sessionId, active }) {
       window.removeEventListener('focus', onWindowActive);
       document.removeEventListener('visibilitychange', onWindowActive);
       hostRef.current?.removeEventListener('wheel', onWheel);
+      offRoster();
       if (roRef.current) roRef.current.disconnect();
       if (detachRef.current) detachRef.current();
       coalescer.dispose();
@@ -323,6 +363,7 @@ export default function TerminalView({ sessionId, active }) {
   // go stale at all — but a tab switch is still the moment to repair anything
   // that did drift, so the user never has to reload to reach the last row.
   useEffect(() => {
+    activeRef.current = active;
     if (!active) return;
     let cancelled = false;
     // Two rAFs: let the browser finish laying out / painting the newly visible

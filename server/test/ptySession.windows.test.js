@@ -22,6 +22,8 @@ const setPlatform = (value) =>
 const fake = {
   mode: 'win32',
   calls: [],
+  resizeMode: 'ok',
+  resizeCalls: [],
   child: null,
 };
 fake.child = {
@@ -30,7 +32,10 @@ fake.child = {
   write() {},
   pause() {},
   resume() {},
-  resize() {},
+  resize(c, r) {
+    fake.resizeCalls.push([c, r]);
+    if (fake.resizeMode === 'fail') throw new Error('resize failed');
+  },
   kill(signal) {
     fake.calls.push(signal === undefined ? '<no-arg>' : signal);
     if (fake.mode === 'fail') throw new Error('EPERM');
@@ -54,6 +59,8 @@ mock.module('node-pty', { defaultExport: fake, namedExports: { spawn: fake.spawn
 async function freshSession({ platform, mode = platform }) {
   fake.mode = mode;
   fake.calls.length = 0;
+  fake.resizeMode = 'ok';
+  fake.resizeCalls.length = 0;
   setPlatform(platform);
   try {
     // Bust the cache so PtySession re-reads the faked platform on import.
@@ -132,6 +139,32 @@ test('a kill that genuinely fails reports false instead of claiming success', as
   try {
     const s = new mod.PtySession({ launch: { ...LAUNCH, file: '/bin/sh' } });
     assert.equal(s.kill('SIGTERM'), false, 'caller must be able to tell the kill failed');
+  } finally {
+    setPlatform(realPlatform);
+  }
+});
+
+test('a failed resize does not update the believed size, so a retry still retries', async () => {
+  const { mod, fake } = await freshSession({ platform: 'win32' });
+  setPlatform('win32');
+  try {
+    const s = new mod.PtySession({ launch: LAUNCH });
+    assert.equal(s.cols, 120, 'spawn default');
+
+    // ConPTY rejects the first resize (the known right-after-spawn flake).
+    fake.resizeMode = 'fail';
+    s.resize(98, 39);
+    assert.equal(s.cols, 120, 'failed resize must not be recorded as applied');
+    assert.equal(s.rows, 30, 'failed resize must not be recorded as applied');
+
+    // The client re-asserts the same dims once the PTY can take them. Before
+    // the fix this early-returned on the phantom recorded size and the PTY
+    // stayed 120 cols forever while everyone believed it was 98.
+    fake.resizeMode = 'ok';
+    s.resize(98, 39);
+    assert.equal(s.cols, 98, 'retry with identical dims must reach the child');
+    assert.equal(s.rows, 39, 'retry with identical dims must reach the child');
+    assert.deepEqual(fake.resizeCalls, [[98, 39], [98, 39]]);
   } finally {
     setPlatform(realPlatform);
   }

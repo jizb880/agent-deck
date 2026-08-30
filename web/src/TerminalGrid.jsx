@@ -99,7 +99,7 @@ export default function TerminalGrid({
                     </button>
                   </div>
                   <div className="pane-body" onMouseDown={() => onActivate(id)}>
-                    <TerminalView sessionId={id} active={id === activeId} />
+                    <TerminalView sessionId={id} active={id === activeId} kind={byId.get(id).kind} />
                   </div>
                 </div>
               </Panel>
@@ -134,7 +134,7 @@ export default function TerminalGrid({
             key={id}
             className={`tab-pane ${id === activeId ? 'active' : 'inactive'}`}
           >
-            <TerminalView sessionId={id} active={id === activeId} />
+            <TerminalView sessionId={id} active={id === activeId} kind={byId.get(id).kind} />
           </div>
         ))}
       </div>

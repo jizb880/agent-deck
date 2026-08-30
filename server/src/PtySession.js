@@ -138,13 +138,21 @@ export class PtySession extends EventEmitter {
     const c = Math.max(2, Math.floor(cols) || 0);
     const r = Math.max(1, Math.floor(rows) || 0);
     if (c === this.cols && r === this.rows) return;
-    this.cols = c;
-    this.rows = r;
     try {
       this.child.resize(c, r);
     } catch {
-      // Child may have just exited; ignore.
+      // The resize did NOT happen (child just exited, or ConPTY rejected it —
+      // a known flake right after spawn on Windows). Crucially, don't record
+      // the new size: doing so made every retry with the same dims early-out
+      // above, leaving the PTY permanently at its old width while server and
+      // clients all believed it matched. A CLI laying out for that phantom
+      // width breaks in subtle ways — e.g. Claude Code sees a soft-wrapped
+      // input line as a single row, so ArrowDown falls through to history
+      // instead of moving down a display row.
+      return;
     }
+    this.cols = c;
+    this.rows = r;
   }
 
   /**
