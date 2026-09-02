@@ -1,6 +1,6 @@
 {
   "name": "agent-deck",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "private": true,
   "type": "module",
   "description": "Local dashboard to manage multiple AI coding agent CLI sessions (PTY, personas, file explorer, git)",
