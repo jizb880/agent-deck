@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { wsClient } from './wsClient.js';
 import { OutputCoalescer } from './outputCoalescer.js';
+import { getScrollHistory, saveScrollHistory, pruneScrollHistory } from './scrollMemory.js';
 
 // Light terminal theme (GitHub-light-ish ANSI palette tuned for a white bg).
 const LIGHT_THEME = {
@@ -59,8 +60,40 @@ export default function TerminalView({ sessionId, active, kind }) {
   // by current position is what lets us recover a viewport that a reflow or
   // in-place TUI redraw stranded above the bottom.
   const followRef = useRef(true);
+  // Last-known scroll state for this session, mirrored into scrollMemory when
+  // this terminal unmounts. Survives reconnects and tab switches so switching
+  // away and back restores where the user was reading instead of snapping to
+  // the bottom after a snapshot replay. `offset` is rows above the bottom;
+  // `follow: false` means "user deliberately scrolled up".
+  const scrollStateRef = useRef({ follow: true, offset: 0 });
+  // While a saved position is being restored (snapshot replay after a
+  // reconnect/remount), suppress the rejoin logic: the write lands at the bottom
+  // and its onScroll would otherwise re-enable follow before the restore.
+  const restoringRef = useRef(false);
+  // True when the user wedged a wheel scroll in between replay start and the
+  // write callback (snapshot writes can take ~100ms on long transcripts); the
+  // restore is then abandoned in favor of what they explicitly scrolled to.
+  const userScrolledRef = useRef(false);
+  // Session ids currently in the roster. The unmount cleanup saves the scroll
+  // position back to scrollMemory, but must not do that for a session that was
+  // just removed — the roster listener prunes it a moment later, and a stale
+  // save could resurrect the entry for a future id reuse.
+  const liveIdsRef = useRef(null);
 
   useEffect(() => {
+    // A remount of this session's terminal (user switched away and back)
+    // restores where they were reading, not the bottom. The saved position is
+    // loaded here rather than at attach, so it survives the gap between mount
+    // and the server's snapshot replay.
+    const saved = getScrollHistory(sessionId);
+    if (saved) {
+      scrollStateRef.current = { ...saved };
+      // Pre-set follow so the initial fit/activation can't snap to the bottom
+      // before the snapshot arrives. (restoringRef itself is armed by the
+      // attached handler, whose replay is what actually restores the position.)
+      if (saved.follow === false) followRef.current = false;
+    }
+
     const term = new Terminal({
       // Per-platform monospace faces, best-first: the mac ones, then the
       // Windows console fonts (Cascadia ships with Terminal/VS, Consolas with
@@ -245,6 +278,7 @@ export default function TerminalView({ sessionId, active, kind }) {
     // the viewport comes back near the bottom (wheel, scrollbar, or scroll).
     const onWheel = (e) => {
       if (e.deltaY < 0) followRef.current = false;
+      if (restoringRef.current) userScrolledRef.current = true;
     };
     hostRef.current.addEventListener('wheel', onWheel, { passive: true });
     // Rejoin within a few rows of the bottom rather than at exact equality.
@@ -254,30 +288,103 @@ export default function TerminalView({ sessionId, active, kind }) {
     // reach it." A small threshold lets a downward scroll re-engage follow
     // mode mid-stream, after which scrollToBottom keeps it pinned.
     const REJOIN_ROWS = 3;
-    term.onScroll(() => {
+    const updateScrollState = () => {
       const buf = term.buffer.active;
-      if (buf.baseY - buf.viewportY <= REJOIN_ROWS) followRef.current = true;
+      const fromBottom = buf.baseY - buf.viewportY;
+      if (fromBottom <= REJOIN_ROWS) {
+        followRef.current = true;
+        scrollStateRef.current = { follow: true, offset: 0 };
+      } else {
+        scrollStateRef.current = { follow: false, offset: fromBottom };
+      }
+    };
+    term.onScroll(() => {
+      if (restoringRef.current) {
+        // Keyboard PgUp/PgDn mid-replay: same user take-over as a wheel.
+        const fromBottom = term.buffer.active.baseY - term.buffer.active.viewportY;
+        if (fromBottom > REJOIN_ROWS) userScrolledRef.current = true;
+        return;
+      }
+      updateScrollState();
     });
+    // User scrolls (wheel, scrollbar drag) update the DOM scrollTop directly
+    // and — unlike terminal-driven scrolls — skip xterm's public onScroll (the
+    // viewport fires those with suppressScrollEvent). Listen on the viewport
+    // element too so the saved position tracks what the user actually did.
+    const viewportEl = hostRef.current.querySelector('.xterm-viewport');
+    const onViewportScroll = () => {
+      if (restoringRef.current) {
+        // Scroll left the bottom mid-replay: the user took over, drop the
+        // pending restore. (xterm's own refresh syncs scrollTop without
+        // changing baseY - viewportY, so it stays below REJOIN_ROWS.)
+        const fromBottom = term.buffer.active.baseY - term.buffer.active.viewportY;
+        if (fromBottom > REJOIN_ROWS) userScrolledRef.current = true;
+        return;
+      }
+      updateScrollState();
+    };
+    if (viewportEl) viewportEl.addEventListener('scroll', onViewportScroll, { passive: true });
 
     const handler = (frame) => {
       switch (frame.type) {
-        case 'attached':
+        case 'attached': {
           coalescer.reset();
+          // Snapshot replay after a reconnect (or the remount path above)
+          // would land at the bottom; re-apply the user's last position for
+          // this session instead. `offset` is rows above the bottom, so a
+          // buffer that grew or was trimmed while we were away still lands in
+          // roughly the same place in the transcript.
+          const saved = scrollStateRef.current;
+          restoringRef.current = true;
+          userScrolledRef.current = false;
+          // Pre-set follow so a fit/activation that lands mid-replay (before
+          // the write callback) doesn't snap to the bottom and undo the
+          // restore below.
+          if (saved.follow === false) followRef.current = false;
           term.reset();
-          followRef.current = true;
-          // write() is async — scroll to bottom once the snapshot is rendered
-          // so the replayed prompt/input box is in view. The gate opens in the
-          // same callback: by then every auto-reply the replay provoked has
-          // been emitted (and dropped).
+          const replay = () => {
+            // The user beat the replay (wheeled while it was in flight): they
+            // scrolled where they wanted, keep it.
+            if (userScrolledRef.current) {
+              restoringRef.current = false;
+              updateScrollState();
+              return;
+            }
+            restoringRef.current = false;
+            if (saved.follow === false) {
+              const buf = term.buffer.active;
+              // The write finished at the bottom (viewportY === baseY), so
+              // backing off by the saved offset puts the same rows as when the
+              // user left — baseY, not buffer.length, is the frame of
+              // reference (length also counts the visible `rows`).
+              const target = Math.max(0, buf.baseY - saved.offset);
+              // scrollLines fires onScroll -> updateScrollState, which would
+              // overwrite the restore with its own view-position reading, so
+              // re-set the saved offset after scrolling to the same place:
+              // the restored position is what the user saw when they left.
+              followRef.current = false;
+              term.scrollLines(target - buf.viewportY);
+              scrollStateRef.current = { follow: false, offset: saved.offset };
+            } else {
+              // write() below left the viewport at the bottom already; no need
+              // for an extra scroll, but keep the state explicit for the
+              // unmount-save to pick up.
+              term.scrollToBottom();
+              scrollStateRef.current = { follow: true, offset: 0 };
+            }
+          };
           if (frame.snapshot) {
             replayDepth += 1;
             term.write(frame.snapshot, () => {
               replayDepth -= 1;
-              term.scrollToBottom();
+              replay();
             });
+          } else {
+            replay();
           }
           requestAnimationFrame(tryFit);
           break;
+        }
         case 'output':
           // Through the coalescer: synchronized-update frames (mode 2026) and
           // sub-frame bursts reach xterm as one write, so an in-place TUI
@@ -322,6 +429,10 @@ export default function TerminalView({ sessionId, active, kind }) {
     // resize/roster feedback loops.
     let lastReconcile = 0;
     const offRoster = wsClient.onRoster((sessions) => {
+      // Sessions that vanished are gone; drop their scroll memory so no stale
+      // position survives to a future id reuse.
+      liveIdsRef.current = sessions.map((s) => s.id);
+      pruneScrollHistory(liveIdsRef.current);
       if (!activeRef.current || document.hidden || !document.hasFocus()) return;
       const el = hostRef.current;
       if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
@@ -349,10 +460,28 @@ export default function TerminalView({ sessionId, active, kind }) {
       window.removeEventListener('focus', onWindowActive);
       document.removeEventListener('visibilitychange', onWindowActive);
       hostRef.current?.removeEventListener('wheel', onWheel);
+      viewportEl?.removeEventListener('scroll', onViewportScroll);
       offRoster();
       if (roRef.current) roRef.current.disconnect();
       if (detachRef.current) detachRef.current();
       coalescer.dispose();
+      // Persist the user's position before the terminal is destroyed; the next
+      // mount of this session reads it back (see the mount effect above).
+      // Recompute from the live buffer — updateScrollState may not have seen
+      // the final scroll event yet, e.g. a wheel-up right before switching.
+      // Skip the save only once we know for sure the session left the roster:
+      // saving after the prune would resurrect the entry (and never be cleaned).
+      const liveIds = liveIdsRef.current;
+      const stillLive = liveIds === null || liveIds.includes(sessionId);
+      if (stillLive) {
+        const buf = term.buffer.active;
+        const fromBottom = buf.baseY - buf.viewportY;
+        scrollStateRef.current =
+          fromBottom <= 3
+            ? { follow: true, offset: 0 }
+            : { follow: false, offset: fromBottom };
+        saveScrollHistory(sessionId, scrollStateRef.current);
+      }
       term.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -376,7 +505,9 @@ export default function TerminalView({ sessionId, active, kind }) {
         // extent is stale; this is what restores the ability to drag all the
         // way to the last row after coming back to the tab.
         resyncRef.current?.();
-        if (followRef.current) termRef.current?.scrollToBottom();
+        // Suppressed while a snapshot replay is in flight: the replay re-applies
+        // the saved position itself, and snapping now would undo it.
+        if (!restoringRef.current && followRef.current) termRef.current?.scrollToBottom();
         termRef.current?.focus();
       });
     });
