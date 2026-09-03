@@ -211,15 +211,12 @@ export default function TerminalView({ sessionId, active, kind }) {
     });
 
     // Depth of snapshot replays currently being parsed (reconnects can overlap).
-    // While >0, xterm's onData output is NOT forwarded to the PTY: replaying
-    // history makes xterm.js re-answer every terminal query recorded in it
-    // (device attributes, cursor position, colors…), and forwarding those
-    // replies would type stray ESC-sequences into the running CLI — Claude
-    // Code reads the ESCs as the Escape key and aborts its in-flight API
-    // request. The server strips queries from snapshots too (replayFilter.js);
-    // this gate covers partial sequences that survive scrollback trimming and
-    // keeps a few ms of replay-time keystrokes from interleaving mid-redraw.
-    // Answers to live queries (output received after attach) still flow.
+    // While >0, xterm's onData output is NOT forwarded to the PTY. The
+    // snapshot is the server emulator's rendered buffer, so it carries no
+    // terminal queries for xterm.js to answer — but the gate stays as a
+    // backstop: a reply typed into the CLI mid-replay reads as the Escape key
+    // and aborts an agent's in-flight API request. Answers to live queries
+    // (output received after attach) still flow.
     let replayDepth = 0;
 
     term.onData((data) => {
@@ -227,14 +224,56 @@ export default function TerminalView({ sessionId, active, kind }) {
       wsClient.input(sessionId, data);
     });
 
+    // IME-committed punctuation. Chinese IMEs (Sogou on macOS in particular)
+    // commit full-width punctuation — "，。？！" — with no composition session:
+    // the keydown/keypress still carry the ASCII key ("." / ","), xterm's
+    // keypress handler sends that ASCII and cancels the event, and the IME's
+    // "。" never reaches the PTY. So for a bare ASCII punctuation key, bypass
+    // xterm's key handling and forward what the browser/IME actually inserts
+    // (the `input` event's data) instead. Plain ASCII typing takes the same
+    // route with the same result; letters, digits and modifier chords are left
+    // to xterm, and anything inside a composition belongs to xterm's own IME
+    // handling.
+    let composing = false;
+    let punctuationPending = false;
+    const isPunctuationKey = (key) => {
+      if (typeof key !== 'string' || key.length !== 1) return false;
+      const c = key.charCodeAt(0);
+      const alnum = (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a);
+      return c > 0x20 && c <= 0x7e && !alnum;
+    };
+    const isImePunctuation = (e) =>
+      !e.ctrlKey && !e.altKey && !e.metaKey && !e.isComposing && !composing && isPunctuationKey(e.key);
+    const onCompositionStart = () => {
+      composing = true;
+      punctuationPending = false;
+    };
+    const onCompositionEnd = () => {
+      composing = false;
+    };
+    term.textarea.addEventListener('compositionstart', onCompositionStart);
+    term.textarea.addEventListener('compositionend', onCompositionEnd);
+    // Capture on the host so this runs before xterm's own textarea listener,
+    // which would otherwise send the glyph a second time.
+    const onInput = (e) => {
+      if (!punctuationPending) return;
+      punctuationPending = false;
+      if (e.inputType !== 'insertText' || !e.data) return;
+      e.stopImmediatePropagation();
+      // The glyph landed in xterm's helper textarea only because the keypress
+      // wasn't cancelled; keep that textarea at its empty resting state.
+      if (e.target instanceof HTMLTextAreaElement) e.target.value = '';
+      term.input(e.data, true);
+    };
+    hostRef.current.addEventListener('input', onInput, true);
+
     // Answer the synchronized-output probe. On launch Claude Code asks DECRQM
     // `CSI ?2026$p` and only brackets its repaints with mode 2026 when the
     // terminal reports the mode as recognized — xterm.js implements neither
     // DECRQM nor mode 2026, so the probe went unanswered and Claude Code
     // repainted unsynchronized. Reply "recognized, currently reset"
     // (`?2026;2$y`) for 2026 only; every other mode stays unanswered exactly
-    // as before. Replay-gated like onData so a query that survives the
-    // server-side snapshot filtering can't type into the CLI.
+    // as before. Replay-gated like onData.
     term.parser.registerCsiHandler(
       { prefix: '?', intermediates: '$', final: 'p' },
       (params) => {
@@ -260,6 +299,16 @@ export default function TerminalView({ sessionId, active, kind }) {
         if (e.type === 'keydown' && replayDepth === 0) wsClient.input(sessionId, '\x1b\r');
         e.preventDefault();
         return false; // swallow keydown/keypress/keyup so xterm never adds a CR
+      }
+      // Punctuation: let the browser/IME insert it and forward from `input`
+      // (see above). keyup still goes to xterm so its key state resets.
+      if (e.type === 'keyup') {
+        punctuationPending = false;
+      } else if (isImePunctuation(e)) {
+        if (e.type === 'keydown') punctuationPending = true;
+        return false;
+      } else if (e.type === 'keydown') {
+        punctuationPending = false;
       }
       // Only intercept when Ctrl/Cmd is pressed (not plain typing).
       if (!e.ctrlKey && !e.metaKey) return true;
@@ -460,6 +509,9 @@ export default function TerminalView({ sessionId, active, kind }) {
       window.removeEventListener('focus', onWindowActive);
       document.removeEventListener('visibilitychange', onWindowActive);
       hostRef.current?.removeEventListener('wheel', onWheel);
+      hostRef.current?.removeEventListener('input', onInput, true);
+      term.textarea?.removeEventListener('compositionstart', onCompositionStart);
+      term.textarea?.removeEventListener('compositionend', onCompositionEnd);
       viewportEl?.removeEventListener('scroll', onViewportScroll);
       offRoster();
       if (roRef.current) roRef.current.disconnect();
