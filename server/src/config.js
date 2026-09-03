@@ -8,6 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT_DIR = path.resolve(__dirname, '..', '..');
 export const DATA_DIR = process.env.CONTROL_APP_DATA || path.join(ROOT_DIR, 'data');
 export const PERSONAS_FILE = path.join(DATA_DIR, 'personas.json');
+export const SESSION_HISTORY_FILE = path.join(DATA_DIR, 'session-history.json');
 export const WEB_DIST = path.join(ROOT_DIR, 'web', 'dist');
 
 export const HOST = process.env.HOST || '127.0.0.1';
@@ -48,6 +49,11 @@ export const claudeProjectsDir = () =>
 // bounded read to extract its preview, and a picker longer than this is not
 // useful to scroll anyway.
 export const RESUME_LIST_LIMIT = Number(process.env.RESUME_LIST_LIMIT || 30);
+
+// How many launched sessions the persisted history keeps. The sidebar's
+// "Recent" list only ever shows a handful, but the log is what makes those
+// survive a backend restart, and a longer tail costs nothing to retain.
+export const SESSION_HISTORY_LIMIT = Number(process.env.SESSION_HISTORY_LIMIT || 50);
 
 /**
  * CLIs this dashboard knows how to launch.

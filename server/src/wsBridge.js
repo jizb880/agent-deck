@@ -1,5 +1,6 @@
 import { WebSocketServer } from 'ws';
 import { sessionManager } from './SessionManager.js';
+import { sessionHistory } from './sessionHistory.js';
 import { stripTerminalQueries } from './replayFilter.js';
 
 /**
@@ -19,6 +20,7 @@ import { stripTerminalQueries } from './replayFilter.js';
  *    { type:'status',   sessionId, status, exitCode?, exitSignal? }
  *    { type:'exit',     sessionId, exitCode, exitSignal }
  *    { type:'sessions', sessions:[...] }                full roster
+ *    { type:'history',  entries:[...] }                 persisted session tail
  *    { type:'error',    message }
  *    { type:'pong' }
  */
@@ -33,6 +35,16 @@ export function attachWebSocket(server) {
     }
   };
   sessionManager.on('sessions', onSessions);
+
+  // Structural history changes (create / reopen / rename / remove) are rare,
+  // so broadcast without throttle. Touch-only updates deliberately don't emit.
+  const onHistory = (entries) => {
+    const frame = JSON.stringify({ type: 'history', entries });
+    for (const ws of wss.clients) {
+      if (ws.readyState === ws.OPEN) ws.send(frame);
+    }
+  };
+  sessionHistory.on('change', onHistory);
 
   wss.on('connection', (ws) => {
     // Per-connection map: sessionId -> unsubscribe fn.
@@ -127,8 +139,11 @@ export function attachWebSocket(server) {
       });
     };
 
-    // Send the current roster immediately on connect.
+    // Send the current roster + persisted history immediately on connect.
     send({ type: 'sessions', sessions: sessionManager.list() });
+    sessionHistory.list().then((entries) => {
+      if (ws.readyState === ws.OPEN) send({ type: 'history', entries });
+    });
 
     ws.on('message', (raw) => {
       let msg;

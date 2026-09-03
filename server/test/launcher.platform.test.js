@@ -394,6 +394,134 @@ test('a resume id with stray whitespace is normalized, not passed through', () =
   ]);
 });
 
+test('a pinned session id is emitted as --session-id, only when supplied', () => {
+  // The dashboard pins claude's transcript id so it can --resume the same
+  // conversation after a restart. Nothing is emitted without one (so every
+  // other launch test keeps its exact argv).
+  const bin = fakeBinDir(['claude.cmd']);
+  const pinned = withPlatform({ platform: 'win32', env: WIN_ENV(bin) }, () =>
+    launcher.buildLaunch(
+      { kind: 'claude' },
+      { cwd: os.tmpdir(), sessionId: '11111111-2222-4333-8444-555555555555' }
+    )
+  );
+  assert.deepEqual(pinned.args, ['--session-id', '11111111-2222-4333-8444-555555555555']);
+
+  const bare = withPlatform({ platform: 'win32', env: WIN_ENV(bin) }, () =>
+    launcher.buildLaunch({ kind: 'claude' }, { cwd: os.tmpdir() })
+  );
+  assert.deepEqual(bare.args, []);
+});
+
+test('a malformed pinned session id is rejected', () => {
+  const bin = fakeBinDir(['claude.cmd']);
+  assert.throws(
+    () =>
+      withPlatform({ platform: 'win32', env: WIN_ENV(bin) }, () =>
+        launcher.buildLaunch({ kind: 'claude' }, { cwd: os.tmpdir(), sessionId: 'not-a-uuid' })
+      ),
+    /Invalid session id/
+  );
+});
+
+test('--session-id is ignored for kinds without resume support', () => {
+  // codex has no transcript we can key; an unknown flag would make it exit
+  // with a usage error at spawn.
+  const bin = fakeBinDir(['codex.cmd']);
+  const plan = withPlatform({ platform: 'win32', env: WIN_ENV(bin) }, () =>
+    launcher.buildLaunch(
+      { kind: 'codex' },
+      { cwd: os.tmpdir(), sessionId: '11111111-2222-4333-8444-555555555555' }
+    )
+  );
+  assert.deepEqual(plan.args, []);
+});
+
+test('forkSession:false resumes in place with no --fork-session', () => {
+  // Reopening from the Recent list continues the same conversation; forking
+  // would silently give it a new id the history entry does not know about.
+  const bin = fakeBinDir(['claude.cmd']);
+  const plan = withPlatform({ platform: 'win32', env: WIN_ENV(bin) }, () =>
+    launcher.buildLaunch(
+      { kind: 'claude' },
+      {
+        cwd: os.tmpdir(),
+        resumeSessionId: '92d24c92-b5c5-4329-aedf-d51633d1cd6e',
+        forkSession: false,
+      }
+    )
+  );
+  assert.deepEqual(plan.args, ['--resume', '92d24c92-b5c5-4329-aedf-d51633d1cd6e']);
+});
+
+test('an in-place resume never also emits --session-id', () => {
+  // Verified against claude 2.1.236: "--session-id can only be used with
+  // --continue or --resume if --fork-session is also specified" — the tab
+  // would exit 1 on spawn. The resumed conversation keeps its own id anyway.
+  const bin = fakeBinDir(['claude.cmd']);
+  const plan = withPlatform({ platform: 'win32', env: WIN_ENV(bin) }, () =>
+    launcher.buildLaunch(
+      { kind: 'claude' },
+      {
+        cwd: os.tmpdir(),
+        resumeSessionId: '92d24c92-b5c5-4329-aedf-d51633d1cd6e',
+        sessionId: '92d24c92-b5c5-4329-aedf-d51633d1cd6e',
+        forkSession: false,
+      }
+    )
+  );
+  assert.deepEqual(plan.args, ['--resume', '92d24c92-b5c5-4329-aedf-d51633d1cd6e']);
+});
+
+test('resume + fork + pinned id: all three flags, in that order', () => {
+  // The launch dialog's fork path also pins the new id (claude honors
+  // --session-id together with --resume --fork-session: the forked transcript
+  // is written under the supplied uuid), so history can resume the fork too.
+  const bin = fakeBinDir(['claude.cmd']);
+  const plan = withPlatform({ platform: 'win32', env: WIN_ENV(bin) }, () =>
+    launcher.buildLaunch(
+      { kind: 'claude' },
+      {
+        cwd: os.tmpdir(),
+        resumeSessionId: '92d24c92-b5c5-4329-aedf-d51633d1cd6e',
+        sessionId: '11111111-2222-4333-8444-555555555555',
+      }
+    )
+  );
+  assert.deepEqual(plan.args, [
+    '--resume',
+    '92d24c92-b5c5-4329-aedf-d51633d1cd6e',
+    '--fork-session',
+    '--session-id',
+    '11111111-2222-4333-8444-555555555555',
+  ]);
+});
+
+test('nested Claude Code markers are dropped from the inherited env, kept from a persona', () => {
+  // A dashboard started from inside a Claude Code session inherits the
+  // child-session marker; a claude spawned with it disables transcript
+  // saving, so nothing it did could ever be resumed from the Recent list.
+  const bin = fakeBinDir(['bash', 'claude']);
+  const plan = withPlatform(
+    {
+      platform: 'linux',
+      env: {
+        PATH: bin,
+        HOME: os.tmpdir(),
+        CLAUDECODE: '1',
+        CLAUDE_CODE_CHILD_SESSION: '1',
+        CLAUDE_CODE_SESSION_ID: 'parent',
+        CLAUDE_EFFORT: 'high', // a user setting, not an identity marker
+      },
+    },
+    () => launcher.buildLaunch({ kind: 'claude', env: { CLAUDE_CODE_SESSION_ID: 'mine' } }, { cwd: os.tmpdir() })
+  );
+  assert.equal(plan.env.CLAUDECODE, undefined);
+  assert.equal(plan.env.CLAUDE_CODE_CHILD_SESSION, undefined);
+  assert.equal(plan.env.CLAUDE_EFFORT, 'high');
+  assert.equal(plan.env.CLAUDE_CODE_SESSION_ID, 'mine', 'an explicit persona value still wins');
+});
+
 test('dangerous env vars are dropped case-insensitively', () => {
   // Windows env names are case-insensitive, so a case-sensitive denylist let
   // `Bash_Env` through — a bypass of the "you can only launch a CLI" guarantee.

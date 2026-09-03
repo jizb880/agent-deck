@@ -218,6 +218,47 @@ async function scanProjectDir(dir, target, limit) {
 }
 
 /**
+ * Does the transcript for `sessionId` still exist? True/false, or null only
+ * when the projects root itself can't be read (then the caller should just
+ * attempt the resume and let the CLI report).
+ *
+ * The encoded-name guess is tried first; if it misses, every project dir is
+ * probed for `<id>.jsonl`. That blind pass is what keeps the answer right on
+ * Windows, where the dash encoding may not match — and it is cheap, since
+ * session ids are UUIDs (one stat per project dir, no reads).
+ */
+export async function transcriptExists(cwd, sessionId) {
+  const id = normalizeSessionId(sessionId);
+  if (!id) return false;
+  const root = claudeProjectsDir();
+  const file = `${id}${JSONL}`;
+  const isFile = async (p) => {
+    try {
+      return (await fsp.stat(p)).isFile();
+    } catch {
+      return false;
+    }
+  };
+
+  if (cwd) {
+    for (const name of dirNameCandidates(cwd)) {
+      if (await isFile(path.join(root, name, file))) return true;
+    }
+  }
+
+  let dirs;
+  try {
+    dirs = await fsp.readdir(root, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const d of dirs) {
+    if (d.isDirectory() && (await isFile(path.join(root, d.name, file)))) return true;
+  }
+  return false;
+}
+
+/**
  * List resumable Claude Code sessions for a working directory, newest first.
  * Returns [{ sessionId, mtime, preview }].
  *

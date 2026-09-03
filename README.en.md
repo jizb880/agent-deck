@@ -10,6 +10,8 @@ A local web dashboard for managing multiple AI coding agent CLIs (`claude`, `ope
 
 ![Terminal view](./docs/screenshots/terminal.png)
 
+**Recent sessions (across restarts)** — the sidebar's "Recent" list keeps the most recently used sessions (5 by default) and survives a backend restart. Clicking a Claude Code session resumes its original conversation (`--resume` on the original transcript, no fork); other CLIs relaunch with the same settings. The log lives in `data/session-history.json`, so neither a restart nor a reload loses it. Uses `claude --session-id` to pin the transcript id (a `/clear` inside a session makes Claude mint a new id, so reopening after that returns to the pre-`/clear` conversation).
+
 **File explorer** — browse the active session's working directory without leaving the dashboard (`node_modules`, `.git`, `dist`, and `build` are skipped):
 
 ![File explorer](./docs/screenshots/file-explorer.png)

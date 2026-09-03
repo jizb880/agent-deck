@@ -88,6 +88,7 @@ taskkill /PID <pid> /F
 - **恢复历史会话** — 新建 Claude Code 会话时可从下拉列表挑一条该目录下的历史对话（按时间倒序，带首条提问摘要）继续；留空即新建空白会话。以 `--fork-session` 恢复，原记录不会被改写。
 - **普通终端** — 「+ 终端」按钮打开 shell 会话（macOS/Linux 为登录 shell，Windows 为 PowerShell 或 `cmd.exe`），与 Agent 会话一同管理。
 - **会话看板** — 侧边栏实时显示每个会话状态（启动中 / 运行中 / 处理中 / 空闲 / 已退出）；点击即可切换到该会话，终端尺寸随窗口实时同步。
+- **最近会话（跨重启）** — 侧边栏「最近会话」保留最近使用过的会话（默认 5 条），后端重启后依然可查可点开。Claude Code 会话点击即续接原对话（`--resume` 恢复原 transcript，非分叉）；其他 CLI 按相同配置重新拉起。记录落在 `data/session-history.json`，所以重启、刷新都不会丢失。依赖 `claude --session-id` 固定 transcript 标识（Claude Code 支持此参数；会话内 `/clear` 会让 Claude 换新 id，此时重开会回到 `/clear` 之前的对话）。
 - **文件浏览器** — 主区域「文件」视图列出当前会话工作目录的文件树，点击文件只读预览；`node_modules`、`.git`、`dist`、`build` 自动跳过。
 - **Git 视图** — 主区域「Git」视图列出工作区改动并标注状态（修改 / 新增 / 删除 / 未跟踪），点击文件查看相对 `HEAD` 的完整 diff。非 Git 仓库的目录会明确提示。
 - **独立工作区** — 每个会话可指向不同项目目录。

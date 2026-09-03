@@ -15,6 +15,9 @@ import PersonaEditor from './PersonaEditor.jsx';
 export default function App() {
   const [personas, setPersonas] = useState([]);
   const [sessions, setSessions] = useState([]);
+  // Persisted session history from the server — survives backend restarts.
+  // The sidebar merges it with the live roster for the "Recent" list.
+  const [history, setHistory] = useState([]);
   const [cliKinds, setCliKinds] = useState([]);
   const [connected, setConnected] = useState(false);
 
@@ -80,10 +83,12 @@ export default function App() {
     api.cliKinds().then(setCliKinds).catch(() => {});
     refreshPersonas().catch(() => {});
     const offRoster = wsClient.onRoster(setSessions);
+    const offHistory = wsClient.onHistory(setHistory);
     const offConn = wsClient.onConnectionChange(setConnected);
     const offErr = wsClient.onError((frame) => setToast(frame.message || 'Protocol error'));
     return () => {
       offRoster();
+      offHistory();
       offConn();
       offErr();
     };
@@ -126,6 +131,34 @@ export default function App() {
       setToast(String(e.message || e));
     }
   }, [handleCreate]);
+
+  // Reopen a closed entry from the Recent list. The server resumes the stored
+  // Claude conversation in place, or relaunches other kinds with the same
+  // settings; if the transcript is gone it starts fresh and tells us.
+  const handleReopen = useCallback(
+    async (id) => {
+      try {
+        const { session, resumed } = await api.reopenSessionHistory(id);
+        setSessions((prev) =>
+          prev.some((s) => s.id === session.id) ? prev : [...prev, session]
+        );
+        wsClient.requestList();
+        openSession(session.id);
+        if (session.kind === 'claude' && resumed === false) {
+          setToast('历史对话记录已不存在，已新建会话');
+        }
+      } catch (e) {
+        setToast(String(e.message || e));
+      }
+    },
+    [openSession]
+  );
+
+  const handleRemoveHistory = useCallback((id) => {
+    // Optimistic: the server broadcasts the authoritative list right after.
+    setHistory((prev) => prev.filter((e) => e.id !== id));
+    api.removeSessionHistory(id).catch((e) => setToast(String(e.message || e)));
+  }, []);
 
   // Sidebar「停止」: terminate the CLI (SIGTERM). The session
   // lingers in the sidebar as 已退出 (removable / auto-reaped) so final output
@@ -196,6 +229,7 @@ export default function App() {
       <Sidebar
         personas={personas}
         sessions={orderedSessions}
+        history={history}
         cliKinds={cliKinds}
         connected={connected}
         activeId={activeId}
@@ -203,6 +237,8 @@ export default function App() {
         onQuickLaunch={(kind) => setLaunch({ kind })}
         onQuickTerminal={handleQuickTerminal}
         onOpenSession={openSession}
+        onReopenSession={handleReopen}
+        onRemoveHistory={handleRemoveHistory}
         onKillSession={closeSession}
         onRemoveSession={handleRemove}
         onRenameSession={handleRename}

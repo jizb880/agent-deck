@@ -40,4 +40,11 @@ export const api = {
   renameSession: (id, title) => req('PATCH', `/api/sessions/${id}`, { title }),
   killSession: (id, signal) => req('POST', `/api/sessions/${id}/kill`, { signal }),
   removeSession: (id) => req('DELETE', `/api/sessions/${id}`),
+
+  // Persisted session history (survives backend restarts). Reopen returns
+  // { session, resumed } — resumed:false means the stored conversation was
+  // gone and a fresh session was started instead.
+  listSessionHistory: () => req('GET', '/api/session-history'),
+  removeSessionHistory: (id) => req('DELETE', `/api/session-history/${id}`),
+  reopenSessionHistory: (id) => req('POST', `/api/session-history/${id}/reopen`),
 };

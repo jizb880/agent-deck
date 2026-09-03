@@ -41,8 +41,28 @@ function asArray(v) {
 const DANGEROUS_ENV =
   /^(BASH_ENV|ENV|BASH_FUNC_|LD_PRELOAD|LD_AUDIT|LD_LIBRARY_PATH|LD_ASSUME_KERNEL|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|DYLD_FRAMEWORK_PATH|PROMPT_COMMAND$|COMSPEC$|PATHEXT$|PSModulePath$|_NT_SYMBOL_PATH$)/i;
 
+// Identity markers Claude Code stamps on every process it spawns so a nested
+// `claude` knows it is a child and turns transcript saving off. The dashboard
+// inherits them whenever it is itself started from inside a Claude Code
+// session, and every session it then launched would be silently unresumable
+// ("Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker").
+// The sessions we spawn are top-level from the user's point of view, so these
+// are dropped from the inherited environment only — a persona that sets one
+// on purpose still wins.
+const NESTED_CLAUDE_ENV = new Set([
+  'CLAUDECODE',
+  'CLAUDE_CODE_CHILD_SESSION',
+  'CLAUDE_CODE_ENTRYPOINT',
+  'CLAUDE_CODE_SESSION_ID',
+  'CLAUDE_CODE_EXECPATH',
+  'CLAUDE_PID',
+]);
+
 function safeEnvMerge(...sources) {
-  const out = { ...process.env };
+  const out = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (!NESTED_CLAUDE_ENV.has(k)) out[k] = v;
+  }
   for (const src of sources) {
     if (!src || typeof src !== 'object') continue;
     for (const [k, v] of Object.entries(src)) {
@@ -75,7 +95,7 @@ function usesThirdPartyRelay(baseUrl) {
  * differently: Windows passes it through as argv, POSIX quotes each element
  * into a `-lc` command string.
  */
-function buildCliArgs(spec, { model, agent, systemPrompt, addDirs, extraArgs, resumeSessionId, autoMode }) {
+function buildCliArgs(spec, { model, agent, systemPrompt, addDirs, extraArgs, resumeSessionId, autoMode, sessionId, forkSession = true }) {
   // Subcommand first: `openclaw chat --local` / `hermes chat` must precede any
   // flags, and a CLI that is already interactive contributes nothing here.
   const args = [...(spec.subcommand || [])];
@@ -85,10 +105,25 @@ function buildCliArgs(spec, { model, agent, systemPrompt, addDirs, extraArgs, re
     // would otherwise pass validation and reach the CLI, which `claude`
     // rejects as an unknown session — the tab would spawn and die with no
     // visible reason. --fork-session keeps the original transcript intact so
-    // the same history can be opened in several tabs.
+    // the same history can be opened in several tabs; a reopen from the Recent
+    // list passes forkSession:false to continue the conversation in place
+    // instead.
     const id = normalizeSessionId(resumeSessionId);
     if (!id) throw new Error(`Invalid resume session id: ${resumeSessionId}`);
-    args.push('--resume', id, '--fork-session');
+    args.push('--resume', id);
+    if (forkSession) args.push('--fork-session');
+  }
+
+  // Pin the transcript id so the dashboard knows which conversation a session
+  // maps to — the only way it can resume it after a restart. Only emitted when
+  // a caller supplies one (SessionManager generates it for claude launches).
+  // Never paired with an in-place --resume: claude rejects `--session-id`
+  // alongside --resume unless --fork-session is also given, and the resumed
+  // conversation already has its id.
+  if (sessionId && spec.resume && !(resumeSessionId && !forkSession)) {
+    const id = normalizeSessionId(sessionId);
+    if (!id) throw new Error(`Invalid session id: ${sessionId}`);
+    args.push('--session-id', id);
   }
 
   // Flag spellings come from the spec because they genuinely differ per CLI
@@ -198,6 +233,8 @@ export function buildLaunch(persona, overrides = {}) {
     extraArgs: asArray(persona.extraArgs), // trusted, from persona config
     resumeSessionId,
     autoMode: overrides.autoMode,
+    sessionId: overrides.sessionId,
+    forkSession: overrides.forkSession,
   });
 
   if (isWindows()) {

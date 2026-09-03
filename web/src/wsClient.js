@@ -15,6 +15,7 @@ class WsClient {
     // desired cols/rows per attached session, replayed on reconnect
     this.attachDims = new Map();
     this.rosterSubs = new Set();
+    this.historySubs = new Set(); // persisted session-history listeners
     this.statusSubs = new Set(); // connection status listeners
     this.errorSubs = new Set(); // protocol-error listeners
     this._connect();
@@ -50,6 +51,12 @@ class WsClient {
       }
       if (frame.type === 'sessions') {
         for (const fn of this.rosterSubs) fn(frame.sessions);
+        return;
+      }
+      if (frame.type === 'history') {
+        // Never let a malformed frame clear the list — an empty array is a
+        // legitimate "no history", undefined is a bug upstream.
+        if (Array.isArray(frame.entries)) for (const fn of this.historySubs) fn(frame.entries);
         return;
       }
       if (frame.type === 'error') {
@@ -102,6 +109,11 @@ class WsClient {
   onRoster(fn) {
     this.rosterSubs.add(fn);
     return () => this.rosterSubs.delete(fn);
+  }
+
+  onHistory(fn) {
+    this.historySubs.add(fn);
+    return () => this.historySubs.delete(fn);
   }
 
   onError(fn) {

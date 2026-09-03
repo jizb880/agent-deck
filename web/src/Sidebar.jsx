@@ -223,18 +223,34 @@ function relativeTime(ts, now) {
 }
 
 // One-line row for the recent list: a quick-jump entry, not the management
-// row (stop / rename / cwd live in the Sessions list above).
-function RecentRow({ session, active, now, onOpen }) {
+// row (stop / rename / cwd live in the Sessions list above). A row whose
+// session is no longer in the live roster (backend restarted, or it was
+// removed) reopens it on click — and only those rows offer the ×, since a live
+// session is managed from the Sessions list.
+function RecentRow({ session, active, now, onOpen, onReopen, onRemove }) {
+  const live = session.live !== false;
   return (
     <div
-      className={`recent-row${active ? ' active' : ''}`}
-      onClick={() => onOpen(session.id)}
-      title={`${session.title}\n${session.cwd}`}
+      className={`recent-row${active ? ' active' : ''}${live ? '' : ' closed'}`}
+      onClick={() => (live ? onOpen(session.id) : onReopen(session.id))}
+      title={`${session.title}\n${session.cwd}${live ? '' : '\n点击重新打开'}`}
     >
       <span className={`dot ${session.status}`} />
       <span className="recent-title">{session.title}</span>
       <span className={`kind-badge ${session.kind}`}>{KIND_LABEL[session.kind] || session.kind}</span>
       <span className="recent-time">{relativeTime(session.lastActivity, now)}</span>
+      {!live && (
+        <button
+          className="recent-remove"
+          title="从最近会话中移除"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove(session.id);
+          }}
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }
@@ -242,6 +258,7 @@ function RecentRow({ session, active, now, onOpen }) {
 export default function Sidebar({
   personas,
   sessions,
+  history,
   cliKinds,
   connected,
   activeId,
@@ -249,6 +266,8 @@ export default function Sidebar({
   onQuickLaunch,
   onQuickTerminal,
   onOpenSession,
+  onReopenSession,
+  onRemoveHistory,
   onKillSession,
   onRemoveSession,
   onRenameSession,
@@ -271,15 +290,29 @@ export default function Sidebar({
     });
   };
 
-  // "最近会话": most recently used across all agent kinds, newest first.
-  // `lastActivity` is bumped by the server on both agent output and user
-  // interaction (attach/keystroke/resize), so switching to a session to read
-  // it ranks it even when the agent is silent.
+  // "最近会话": most recently used across all agent kinds, newest first,
+  // *including* sessions from before the backend last restarted. The server's
+  // persisted history is the base; a live roster entry with the same id
+  // overrides it with real-time title/status/lastActivity (`lastActivity` is
+  // bumped by the server on both agent output and user interaction, so
+  // switching to a session to read it ranks it even when the agent is silent).
+  // A closed entry gets `live:false` and a hollow dot; clicking it reopens.
   const RECENT_LIMIT = 5;
-  const recentSessions = useMemo(
-    () => [...sessions].sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0)).slice(0, RECENT_LIMIT),
-    [sessions]
-  );
+  const recentSessions = useMemo(() => {
+    const live = new Map(sessions.map((s) => [s.id, s]));
+    const merged = (history || []).map((e) => {
+      const s = live.get(e.id);
+      return s
+        ? { ...e, ...s, live: true }
+        : { ...e, status: 'closed', live: false };
+    });
+    // A live session missing from history (write failed?) still belongs here.
+    const seen = new Set(merged.map((e) => e.id));
+    for (const s of sessions) if (!seen.has(s.id)) merged.push({ ...s, live: true });
+    return merged
+      .sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0))
+      .slice(0, RECENT_LIMIT);
+  }, [sessions, history]);
   // Relative times ("3 分钟前") need a clock; tick every 30s while the recent
   // list is showing so an idle dashboard doesn't say "刚刚" forever.
   const [now, setNow] = useState(() => Date.now());
@@ -288,7 +321,7 @@ export default function Sidebar({
     setNow(Date.now());
     const t = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(t);
-  }, [collapsed.recent, sessions]);
+  }, [collapsed.recent, sessions, history]);
 
   // Live drag reorder for the session list.
   const [dragId, setDragId] = useState(null);
@@ -383,7 +416,15 @@ export default function Sidebar({
         {!collapsed.recent && (
           <div className="recent-list">
             {recentSessions.map((s) => (
-              <RecentRow key={s.id} session={s} active={s.id === activeId} now={now} onOpen={onOpenSession} />
+              <RecentRow
+                key={s.id}
+                session={s}
+                active={s.id === activeId}
+                now={now}
+                onOpen={onOpenSession}
+                onReopen={onReopenSession}
+                onRemove={onRemoveHistory}
+              />
             ))}
             {recentSessions.length === 0 && <div className="muted small">还没有最近使用的会话。</div>}
           </div>

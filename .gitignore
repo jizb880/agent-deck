@@ -1,5 +1,6 @@
 node_modules/
 web/dist/
 data/personas.json
+data/session-history.json
 *.log
 .DS_Store

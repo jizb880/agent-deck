@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { HOST, PORT, WEB_DIST } from './config.js';
 import { registerRoutes } from './httpRoutes.js';
 import { attachWebSocket } from './wsBridge.js';
+import { sessionHistory } from './sessionHistory.js';
 
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL || 'info' } });
 
@@ -30,6 +31,17 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (err) => {
   app.log.error({ err }, 'unhandledRejection (kept alive)');
 });
+
+// The session history debounces writes; on a normal exit the last 'exit'/'exit
+// timer' won't have fired, so flush synchronously. A bare SIGINT/SIGTERM never
+// emits 'exit', so intercept and exit cleanly after flushing.
+process.on('exit', () => sessionHistory.flushSync());
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    sessionHistory.flushSync();
+    process.exit(0);
+  });
+}
 
 try {
   await app.listen({ host: HOST, port: PORT });

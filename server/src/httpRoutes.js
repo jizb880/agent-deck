@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { personaStore } from './personaStore.js';
 import { sessionManager } from './SessionManager.js';
+import { sessionHistory } from './sessionHistory.js';
 import { homeDir } from './config.js';
 import { listResumableSessions } from './claudeSessions.js';
 import { detectCliKinds } from './cliDetect.js';
@@ -114,5 +115,36 @@ export function registerRoutes(app) {
       return reply.code(500).send({ error: 'Session is still running and could not be killed' });
     }
     return { ok: true };
+  });
+
+  // ---- Session history (persisted across restarts) ----
+  // Full tail, newest first; the sidebar derives its "Recent" top-5 from this
+  // merged with the live roster. Also pushed over the WS as {type:'history'}.
+  app.get('/api/session-history', async () => sessionHistory.list());
+
+  app.delete('/api/session-history/:id', async (req, reply) => {
+    const ok = await sessionHistory.remove(req.params.id);
+    if (!ok) return reply.code(404).send({ error: 'History entry not found' });
+    return { ok: true };
+  });
+
+  // Reopen a session from a previous run. Returns { session, resumed } so the
+  // client can say when the stored conversation turned out to be gone.
+  app.post('/api/session-history/:id/reopen', async (req, reply) => {
+    const entry = await sessionHistory.get(req.params.id);
+    if (!entry) return reply.code(404).send({ error: 'History entry not found' });
+    if (!(fs.existsSync(entry.cwd) && fs.statSync(entry.cwd).isDirectory())) {
+      return reply.code(400).send({ error: `Working dir does not exist: ${entry.cwd}` });
+    }
+    try {
+      const result = await sessionManager.reopen(req.params.id);
+      if (!result) return reply.code(404).send({ error: 'History entry not found' });
+      return {
+        session: result.session.toJSON(),
+        resumed: result.resumed,
+      };
+    } catch (err) {
+      return reply.code(400).send({ error: String(err.message || err) });
+    }
   });
 }

@@ -101,6 +101,16 @@ body {
 }
 .recent-row .kind-badge { flex: 0 0 auto; }
 .recent-time { flex: 0 0 auto; font-size: 11px; color: var(--muted); white-space: nowrap; }
+/* A closed (from a previous backend run) row: dimmer title, hollow dot, and a
+   × that only shows on hover so the row stays one quiet line. */
+.recent-row.closed .recent-title { color: var(--muted); font-weight: 500; }
+.recent-remove {
+  flex: 0 0 auto; width: 16px; height: 16px; line-height: 14px; padding: 0;
+  font-size: 13px; text-align: center; border-radius: 4px; border: 1px solid transparent;
+  background: transparent; color: var(--muted); cursor: pointer; opacity: 0;
+}
+.recent-row:hover .recent-remove { opacity: 1; }
+.recent-remove:hover { border-color: var(--danger); color: var(--danger); }
 
 /* A uniform grid rather than a wrapping flex row: with five agent CLIs plus
    the terminal, flex-grow hands each row's leftover space to however many
@@ -181,6 +191,8 @@ body {
 .dot.busy { background: var(--claude); box-shadow: 0 0 6px var(--claude); animation: pulse 1s infinite; }
 .dot.starting { background: #f2c14e; }
 .dot.exited { background: #4b5566; }
+/* Not in the live roster (a history entry from before a restart): hollow. */
+.dot.closed { background: transparent; border: 1.5px solid var(--muted); box-sizing: border-box; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 
 /* ---------- Badges / chips ---------- */
