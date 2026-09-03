@@ -61,7 +61,7 @@ npm run dev                 # http://127.0.0.1:5173
 
 All scripts are plain Node, so they run identically in bash, zsh, cmd.exe and PowerShell.
 
-Environment variables: `PORT` (default 4173), `HOST` (default 127.0.0.1), `SCROLLBACK_BYTES`, `IDLE_AFTER_MS`, `CONTROL_APP_DATA` (directory for personas.json), `REAP_EXITED_AFTER_MS`.
+Environment variables: `PORT` (default 4173), `HOST` (default 127.0.0.1), `SCROLLBACK_LINES` (scrollback lines kept per session, default 10000), `IDLE_AFTER_MS`, `CONTROL_APP_DATA` (directory for personas.json), `REAP_EXITED_AFTER_MS`.
 
 ## Uninstall
 

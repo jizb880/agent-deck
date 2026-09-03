@@ -4,7 +4,7 @@ import { PtySession } from './PtySession.js';
 import { buildLaunch } from './launcher.js';
 import { personaStore } from './personaStore.js';
 import { sessionHistory } from './sessionHistory.js';
-import { REAP_EXITED_AFTER_MS } from './config.js';
+import { CLI_KINDS, REAP_EXITED_AFTER_MS } from './config.js';
 import { transcriptExists } from './claudeSessions.js';
 
 /**
@@ -95,29 +95,19 @@ export class SessionManager extends EventEmitter {
     this.sessions.set(session.id, session);
     session._claudeSessionId = claudeSessionId || null;
 
-    await sessionHistory.record(
-      {
-        id: session.id,
-        kind: session.kind,
-        title: session.title,
-        personaId: session.personaId,
-        personaName: session.personaName,
-        cwd: session.cwd,
-        model: launch.kind === 'claude' ? overrides.model || persona.model : null,
-        autoMode: !!overrides.autoMode,
-        claudeSessionId: claudeSessionId || null,
-        createdAt: session.createdAt,
-        lastActivity: session.lastActivity,
-      },
-      { replacesId: replacesHistoryId }
-    );
-
+    // Wire the session up before the awaited history write below: if that
+    // write is slow or fails, the child is already running and must not sit
+    // in the roster with no listeners.
     session.on('status', () => this._emitSessions());
     session.on('exit', () => {
       sessionHistory.touch(session.id, session.lastActivity);
       this._emitSessions();
       this._scheduleReap(session.id);
     });
+    // Agent output is recency too (touch() is debounced on the history side),
+    // otherwise an agent that worked unattended for an hour ranks by the last
+    // keystroke after a restart.
+    session.on('data', () => sessionHistory.touch(session.id, session.lastActivity));
     // touch() marks user interaction (attach/keystroke/resize). Re-broadcast
     // so clients can re-rank "recent sessions", but throttle: a burst of
     // keystrokes must not become a burst of roster frames.
@@ -129,6 +119,25 @@ export class SessionManager extends EventEmitter {
         this._emitSessions();
       }
     });
+
+    await sessionHistory.record(
+      {
+        id: session.id,
+        kind: session.kind,
+        title: session.title,
+        personaId: session.personaId,
+        personaName: session.personaName,
+        cwd: session.cwd,
+        // Store the model the launch really used, for any CLI that takes one,
+        // so a reopen relaunches with it rather than the CLI's default.
+        model: CLI_KINDS[launch.kind]?.modelFlag ? overrides.model || persona.model || null : null,
+        autoMode: !!overrides.autoMode,
+        claudeSessionId: claudeSessionId || null,
+        createdAt: session.createdAt,
+        lastActivity: session.lastActivity,
+      },
+      { replacesId: replacesHistoryId }
+    );
 
     this._emitSessions();
     return session;
@@ -162,8 +171,11 @@ export class SessionManager extends EventEmitter {
     const s = this.sessions.get(id);
     if (!s) return false;
     if (s.status !== 'exited' && !s.kill('SIGKILL')) return false;
+    // The exit listener that would record final recency is dropped below,
+    // before the (asynchronous) exit arrives.
+    sessionHistory.touch(id, s.lastActivity);
     s.removeAllListeners();
-    s.releaseBuffers();
+    s.release();
     this.sessions.delete(id);
     this._emitSessions();
     return true;
@@ -237,8 +249,8 @@ export class SessionManager extends EventEmitter {
   }
 
   // Auto-remove an exited session after a grace period so its scrollback
-  // (~1 MiB) doesn't pin memory forever under session churn. The grace window
-  // lets a client still reattach to read the final output / exit code.
+  // doesn't pin memory forever under session churn. The grace window lets a
+  // client still reattach to read the final output / exit code.
   _scheduleReap(id) {
     const t = setTimeout(() => {
       const s = this.sessions.get(id);

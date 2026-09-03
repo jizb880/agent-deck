@@ -1,13 +1,19 @@
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import pty from 'node-pty';
-import { SCROLLBACK_BYTES, IDLE_AFTER_MS, KILL_ESCALATE_MS } from './config.js';
+import headless from '@xterm/headless';
+import serialize from '@xterm/addon-serialize';
+import { SCROLLBACK_LINES, IDLE_AFTER_MS, KILL_ESCALATE_MS } from './config.js';
 import { isWindows } from './platform.js';
 
+const { Terminal: HeadlessTerminal } = headless;
+const { SerializeAddon } = serialize;
+
 /**
- * A single long-lived PTY running one CLI. Owns its child process, a bounded
- * scrollback buffer (so a reconnecting browser can redraw history), and a
- * coarse status heuristic (running -> busy/idle, or exited).
+ * A single long-lived PTY running one CLI. Owns its child process, a headless
+ * terminal emulator that mirrors what the CLI has drawn (so a reconnecting
+ * browser can redraw the rendered history), and a coarse status heuristic
+ * (running -> busy/idle, or exited).
  *
  * Lifecycle is independent of any WebSocket: clients attach and detach freely;
  * the child keeps running as long as the backend process lives.
@@ -32,9 +38,33 @@ export class PtySession extends EventEmitter {
     this._idleTimer = null;
     this._killTimer = null;
 
-    // Scrollback ring: array of Buffer chunks with a running byte total.
-    this._buffers = [];
-    this._bytes = 0;
+    // Everything the child ever printed, as the terminal *rendered* it. The
+    // previous design kept the last 1 MiB of raw bytes, but a TUI like Claude
+    // Code redraws its screen constantly: 1 MiB of that rendered to ~600
+    // lines, and the earlier prompts of a long session were simply gone once
+    // a client re-attached. Keeping the emulator's buffer instead makes the
+    // snapshot the rendered scrollback, which is both complete and compact.
+    this._term = new HeadlessTerminal({
+      cols: this.cols,
+      rows: this.rows,
+      scrollback: SCROLLBACK_LINES,
+      allowProposedApi: true,
+    });
+    this._serializer = new SerializeAddon();
+    this._term.loadAddon(this._serializer);
+    // Resolves once the most recently received output has been parsed.
+    this._lastWrite = Promise.resolve();
+    // serialize() restores the terminal's modes but not cursor visibility;
+    // Claude Code hides the cursor, and a replay must not un-hide it.
+    this._cursorHidden = false;
+    this._term.parser.registerCsiHandler({ prefix: '?', final: 'l' }, (params) => {
+      if (params.includes(25)) this._cursorHidden = true;
+      return false;
+    });
+    this._term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, (params) => {
+      if (params.includes(25)) this._cursorHidden = false;
+      return false;
+    });
 
     this.child = pty.spawn(launch.file, launch.args, {
       name: 'xterm-256color',
@@ -51,13 +81,7 @@ export class PtySession extends EventEmitter {
   }
 
   _onData(data) {
-    const chunk = Buffer.from(data, 'utf8');
-    this._buffers.push(chunk);
-    this._bytes += chunk.length;
-    // Trim oldest chunks once we exceed the cap.
-    while (this._bytes > SCROLLBACK_BYTES && this._buffers.length > 1) {
-      this._bytes -= this._buffers.shift().length;
-    }
+    this._lastWrite = new Promise((resolve) => this._term.write(data, resolve));
     this.lastActivity = Date.now();
     this._markBusy();
     this.emit('data', data);
@@ -98,15 +122,29 @@ export class PtySession extends EventEmitter {
     this.emit('exit', { exitCode, signal });
   }
 
-  /** Full scrollback as a single string for replay on attach. */
-  getScrollback() {
-    return Buffer.concat(this._buffers).toString('utf8');
+  /**
+   * The rendered terminal state — scrollback, screen, cursor, modes — as an
+   * escape-sequence stream a freshly reset client terminal can replay.
+   *
+   * Waits for all output received so far to be parsed, then serializes in the
+   * same turn, so the result is exact as of the moment it resolves: a caller
+   * that subscribed to 'data' before calling this can discard every chunk it
+   * saw up to then (they are in the snapshot) and forward the rest.
+   */
+  async getSnapshot() {
+    let pending;
+    do {
+      pending = this._lastWrite;
+      await pending;
+    } while (pending !== this._lastWrite);
+    let out = this._serializer.serialize();
+    if (this._cursorHidden) out += '\x1b[?25l';
+    return out;
   }
 
-  /** Release scrollback memory (called when the session is reaped/removed). */
-  releaseBuffers() {
-    this._buffers = [];
-    this._bytes = 0;
+  /** Free the emulator's buffer (called when the session is reaped/removed). */
+  release() {
+    this._term.dispose();
   }
 
   write(data) {
@@ -162,6 +200,9 @@ export class PtySession extends EventEmitter {
     }
     this.cols = c;
     this.rows = r;
+    // Keep the mirror at the PTY's size so its reflow (and the snapshot a
+    // client gets back) match what the CLI is laying out for.
+    this._term.resize(c, r);
   }
 
   /**

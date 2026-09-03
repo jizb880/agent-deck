@@ -1,7 +1,6 @@
 import { WebSocketServer } from 'ws';
 import { sessionManager } from './SessionManager.js';
 import { sessionHistory } from './sessionHistory.js';
-import { stripTerminalQueries } from './replayFilter.js';
 
 /**
  * WebSocket protocol (JSON text frames, all keyed by sessionId where relevant):
@@ -49,6 +48,9 @@ export function attachWebSocket(server) {
   wss.on('connection', (ws) => {
     // Per-connection map: sessionId -> unsubscribe fn.
     const subs = new Map();
+    // Bumped per attach so an attach that was superseded while it awaited its
+    // snapshot can tell, and take its own listeners down instead of leaking.
+    const attachGen = new Map();
 
     const send = (obj) => {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
@@ -73,7 +75,7 @@ export function attachWebSocket(server) {
       }
     };
 
-    const attach = (sessionId, cols, rows) => {
+    const attach = async (sessionId, cols, rows) => {
       const session = sessionManager.get(sessionId);
       if (!session) {
         send({ type: 'error', sessionId, message: `No such session: ${sessionId}` });
@@ -81,27 +83,23 @@ export function attachWebSocket(server) {
       }
       // Re-attach is idempotent: drop any prior subscription first.
       unsubscribe(sessionId);
+      const gen = (attachGen.get(sessionId) || 0) + 1;
+      attachGen.set(sessionId, gen);
 
       if (cols && rows) session.resize(cols, rows);
       // Switching to a session counts as using it, so "recent sessions" ranks
       // it even if the agent has nothing to say yet.
       session.touch();
 
-      // Replay history so the client can redraw the full terminal. Queries are
-      // stripped first: xterm.js would otherwise *answer* every capability
-      // query fossilized in the history (DA, DSR, DECRQM, OSC color…), and the
-      // client would forward those answer bytes as fresh keyboard input to the
-      // CLI — stray ESCs that abort an agent's in-flight API request. That is
-      // exactly what made every busy agent report an API error the moment a
-      // reopened dashboard tab re-attached its sessions.
-      send({
-        type: 'attached',
-        sessionId,
-        snapshot: stripTerminalQueries(session.getScrollback()),
-        session: session.toJSON(),
-      });
-
+      // Subscribe *before* taking the snapshot. The snapshot is exact as of
+      // the moment it resolves and includes every chunk emitted until then,
+      // so output seen while it was being produced is dropped, not queued —
+      // forwarding it too would paint it twice. Status/exit frames from that
+      // window are held and delivered after 'attached', in order.
+      let snapshotPending = true;
+      const held = [];
       const onData = (data) => {
+        if (snapshotPending) return;
         send({ type: 'output', sessionId, data });
         // Backpressure: if the client can't keep up, pause the PTY until the
         // socket's buffered data drains, instead of buffering unboundedly.
@@ -117,8 +115,9 @@ export function attachWebSocket(server) {
           if (drain.unref) drain.unref();
         }
       };
+      const sendOrHold = (frame) => (snapshotPending ? held.push(frame) : send(frame));
       const onStatus = (status) =>
-        send({
+        sendOrHold({
           type: 'status',
           sessionId,
           status,
@@ -126,17 +125,40 @@ export function attachWebSocket(server) {
           exitSignal: session.exitSignal,
         });
       const onExit = ({ exitCode, signal }) =>
-        send({ type: 'exit', sessionId, exitCode, exitSignal: signal ?? null });
+        sendOrHold({ type: 'exit', sessionId, exitCode, exitSignal: signal ?? null });
 
       session.on('data', onData);
       session.on('status', onStatus);
       session.on('exit', onExit);
 
-      subs.set(sessionId, () => {
+      const off = () => {
         session.off('data', onData);
         session.off('status', onStatus);
         session.off('exit', onExit);
-      });
+      };
+      subs.set(sessionId, off);
+
+      // The rendered history (scrollback + screen + cursor + modes), which a
+      // fresh client terminal replays after a reset. Being the emulator's own
+      // buffer rather than raw bytes, it holds no terminal queries for xterm.js
+      // to answer — the replies used to reach the CLI as stray keystrokes.
+      let snapshot;
+      try {
+        snapshot = await session.getSnapshot();
+      } catch (err) {
+        if (subs.get(sessionId) === off) unsubscribe(sessionId);
+        send({ type: 'error', sessionId, message: `Could not snapshot session: ${err.message}` });
+        return;
+      }
+      // Superseded by a newer attach (or detached) while awaiting: that one
+      // owns the subscription now.
+      if (attachGen.get(sessionId) !== gen || subs.get(sessionId) !== off) {
+        off();
+        return;
+      }
+      send({ type: 'attached', sessionId, snapshot, session: session.toJSON() });
+      snapshotPending = false;
+      for (const frame of held) send(frame);
     };
 
     // Send the current roster + persisted history immediately on connect.
@@ -163,7 +185,9 @@ export function attachWebSocket(server) {
       const { type, sessionId } = msg;
       switch (type) {
         case 'attach':
-          attach(sessionId, msg.cols, msg.rows);
+          attach(sessionId, msg.cols, msg.rows).catch((err) =>
+            send({ type: 'error', sessionId, message: `Attach failed: ${err.message}` })
+          );
           break;
         case 'detach':
           unsubscribe(sessionId);

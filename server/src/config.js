@@ -14,9 +14,12 @@ export const WEB_DIST = path.join(ROOT_DIR, 'web', 'dist');
 export const HOST = process.env.HOST || '127.0.0.1';
 export const PORT = Number(process.env.PORT || 4173);
 
-// Per-session scrollback kept in memory so a reattaching browser can redraw
-// full history. 1 MiB per session is plenty for a long CLI session.
-export const SCROLLBACK_BYTES = Number(process.env.SCROLLBACK_BYTES || 1024 * 1024);
+// Per-session scrollback kept in memory (as rendered lines, in a headless
+// terminal that mirrors the PTY) so a reattaching browser can redraw the full
+// history. Matches the client's own scrollback so nothing is lost in replay.
+// Worst case ~2 KB per line at 120 columns, and only sessions that actually
+// reach the cap pay for it.
+export const SCROLLBACK_LINES = Number(process.env.SCROLLBACK_LINES || 10000);
 
 // Milliseconds of output silence after which a session flips busy -> idle.
 export const IDLE_AFTER_MS = Number(process.env.IDLE_AFTER_MS || 900);

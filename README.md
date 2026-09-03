@@ -59,7 +59,7 @@ npm run dev                 # http://127.0.0.1:5173
 
 所有脚本都是纯 Node 实现，在 bash / zsh / cmd.exe / PowerShell 里行为一致。
 
-环境变量：`PORT`（默认 4173）、`HOST`（默认 127.0.0.1）、`SCROLLBACK_BYTES`、`IDLE_AFTER_MS`、`CONTROL_APP_DATA`（personas.json 存放目录）、`REAP_EXITED_AFTER_MS`。
+环境变量：`PORT`（默认 4173）、`HOST`（默认 127.0.0.1）、`SCROLLBACK_LINES`（每个会话保留的回滚行数，默认 10000）、`IDLE_AFTER_MS`、`CONTROL_APP_DATA`（personas.json 存放目录）、`REAP_EXITED_AFTER_MS`。
 
 ## 卸载
 

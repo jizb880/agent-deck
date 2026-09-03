@@ -78,13 +78,13 @@ export function isPortBusy(port, host = '127.0.0.1') {
 }
 
 /** Wait until `port` stops accepting connections, or the deadline passes. */
-export async function waitForPortFree(port, timeoutMs = 4000) {
+export async function waitForPortFree(port, timeoutMs = 4000, host = '127.0.0.1') {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (!(await isPortBusy(port))) return true;
+    if (!(await isPortBusy(port, host))) return true;
     await new Promise((r) => setTimeout(r, 200));
   }
-  return !(await isPortBusy(port));
+  return !(await isPortBusy(port, host));
 }
 
 /**
@@ -95,9 +95,11 @@ export async function waitForPortFree(port, timeoutMs = 4000) {
  * failed and only the npm wrapper died — leaving `node --watch` and its PTY
  * children holding the port. Here: taskkill /T walks the tree on Windows, and
  * on POSIX we spawn the child with detached:true so it *is* a group leader and
- * the negative-PID signal genuinely reaches the whole group.
+ * the negative-PID signal genuinely reaches the whole group. `signal` lets a
+ * caller escalate to SIGKILL when a polite stop went unanswered (ignored on
+ * Windows, where taskkill /F is already forceful).
  */
-export function killTree(child) {
+export function killTree(child, signal = 'SIGTERM') {
   if (!child || child.exitCode !== null || child.signalCode) return;
   if (IS_WINDOWS) {
     spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
@@ -107,10 +109,10 @@ export function killTree(child) {
     return;
   }
   try {
-    process.kill(-child.pid, 'SIGTERM');
+    process.kill(-child.pid, signal);
   } catch {
     try {
-      child.kill('SIGTERM');
+      child.kill(signal);
     } catch {
       /* already gone */
     }
