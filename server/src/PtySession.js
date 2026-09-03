@@ -79,6 +79,15 @@ export class PtySession extends EventEmitter {
     if (this._idleTimer.unref) this._idleTimer.unref();
   }
 
+  // User interaction (attach / keystroke / resize) counts as recency too, not
+  // just agent output — otherwise "recent sessions" would rank a session that
+  // never stopped printing above one the user just switched to and read.
+  touch() {
+    if (this.status === 'exited') return;
+    this.lastActivity = Date.now();
+    this.emit('touched');
+  }
+
   _onExit(exitCode, signal) {
     this.status = 'exited';
     this.exitCode = exitCode;

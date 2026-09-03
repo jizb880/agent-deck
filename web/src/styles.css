@@ -68,6 +68,39 @@ body {
   background: var(--panel-2); border: 1px solid var(--border);
   border-radius: 10px; padding: 0 8px; font-size: 11px;
 }
+.side-head-title { display: flex; align-items: center; gap: 4px; }
+.collapse-btn {
+  background: none; border: none; padding: 0 2px; margin: 0;
+  font-size: 12px; line-height: 1; color: var(--muted); cursor: pointer;
+  transition: transform 0.15s;
+}
+.collapse-btn:hover { color: var(--text); }
+.collapse-btn.collapsed { transform: rotate(-90deg); }
+/* Collapsed sections lose `grow` so the remaining expanded section takes the
+   space; the header stays visible so the user can re-expand it. Recent holds
+   at most a handful of one-line rows: while Sessions is open it sizes to
+   content and Sessions takes the rest; once Sessions is collapsed Recent gets
+   `grow` instead (set in Sidebar.jsx). */
+.side-section.recent { border-top: 1px solid var(--border); }
+.side-section.recent.fit { flex: 0 0 auto; }
+.side-section:not(.grow):not(.fit) { flex: 0 0 auto; }
+
+/* ---------- Recent list (one line per session) ---------- */
+.recent-list { display: flex; flex-direction: column; gap: 2px; }
+.recent-row {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+  border-radius: 6px; cursor: pointer; border: 1px solid transparent;
+  user-select: none; min-width: 0;
+}
+.recent-row:hover { background: var(--panel-2); }
+.recent-row.active { background: var(--panel-2); border-color: var(--accent); }
+.recent-row .dot { flex: 0 0 auto; margin-top: 0; }
+.recent-title {
+  flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.recent-row .kind-badge { flex: 0 0 auto; }
+.recent-time { flex: 0 0 auto; font-size: 11px; color: var(--muted); white-space: nowrap; }
 
 /* A uniform grid rather than a wrapping flex row: with five agent CLIs plus
    the terminal, flex-grow hands each row's leftover space to however many

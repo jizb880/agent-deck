@@ -65,6 +65,16 @@ export class SessionManager extends EventEmitter {
       this._emitSessions();
       this._scheduleReap(session.id);
     });
+    // touch() marks user interaction (attach/keystroke/resize). Re-broadcast
+    // so clients can re-rank "recent sessions", but throttle: a burst of
+    // keystrokes must not become a burst of roster frames.
+    session.on('touched', () => {
+      const now = Date.now();
+      if (now - (this._lastTouchEmit || 0) > 500) {
+        this._lastTouchEmit = now;
+        this._emitSessions();
+      }
+    });
 
     this._emitSessions();
     return session;

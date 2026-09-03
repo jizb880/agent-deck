@@ -71,6 +71,9 @@ export function attachWebSocket(server) {
       unsubscribe(sessionId);
 
       if (cols && rows) session.resize(cols, rows);
+      // Switching to a session counts as using it, so "recent sessions" ranks
+      // it even if the agent has nothing to say yet.
+      session.touch();
 
       // Replay history so the client can redraw the full terminal. Queries are
       // stripped first: xterm.js would otherwise *answer* every capability
@@ -152,12 +155,18 @@ export function attachWebSocket(server) {
           break;
         case 'input': {
           const s = sessionManager.get(sessionId);
-          if (s) s.write(msg.data);
+          if (s) {
+            s.touch();
+            s.write(msg.data);
+          }
           break;
         }
         case 'resize': {
           const s = sessionManager.get(sessionId);
-          if (s) s.resize(msg.cols, msg.rows);
+          if (s) {
+            s.touch();
+            s.resize(msg.cols, msg.rows);
+          }
           break;
         }
         case 'list':
