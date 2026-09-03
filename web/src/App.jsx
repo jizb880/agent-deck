@@ -7,6 +7,7 @@ const SIDEBAR_DEFAULT = 300;
 const clampSidebar = (w) => Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, w));
 import { api } from './api.js';
 import { wsClient } from './wsClient.js';
+import { bundleChanged, reloadForBundle } from './buildCheck.js';
 import Sidebar from './Sidebar.jsx';
 import RightPanel from './RightPanel.jsx';
 import LaunchDialog from './LaunchDialog.jsx';
@@ -79,12 +80,28 @@ export default function App() {
     setPersonas(await api.listPersonas());
   }, []);
 
+  // A reconnect usually means the backend was restarted — and possibly
+  // rebuilt. If this tab is running a stale bundle, reload it; but not out
+  // from under a form the user is typing in — tell them instead.
+  const refreshIfRebuilt = useCallback(async () => {
+    const key = await bundleChanged();
+    if (!key) return;
+    const el = document.activeElement;
+    const typing = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+    if (typing || !reloadForBundle(key)) setToast('前端已更新，请刷新页面以加载新版本');
+  }, []);
+
   useEffect(() => {
     api.cliKinds().then(setCliKinds).catch(() => {});
     refreshPersonas().catch(() => {});
     const offRoster = wsClient.onRoster(setSessions);
     const offHistory = wsClient.onHistory(setHistory);
-    const offConn = wsClient.onConnectionChange(setConnected);
+    let wasConnected = false;
+    const offConn = wsClient.onConnectionChange((c) => {
+      setConnected(c);
+      if (c && wasConnected) refreshIfRebuilt();
+      if (c) wasConnected = true;
+    });
     const offErr = wsClient.onError((frame) => setToast(frame.message || 'Protocol error'));
     return () => {
       offRoster();
@@ -92,7 +109,7 @@ export default function App() {
       offConn();
       offErr();
     };
-  }, [refreshPersonas]);
+  }, [refreshPersonas, refreshIfRebuilt]);
 
   // Auto-dismiss the toast.
   useEffect(() => {
