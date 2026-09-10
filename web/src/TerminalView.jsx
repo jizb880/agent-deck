@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { wsClient } from './wsClient.js';
 import { OutputCoalescer } from './outputCoalescer.js';
+import { imeMaskedControlByte } from './imeControlKeys.js';
 import { getScrollHistory, saveScrollHistory, pruneScrollHistory } from './scrollMemory.js';
 
 // Light terminal theme (GitHub-light-ish ANSI palette tuned for a white bg).
@@ -299,6 +300,19 @@ export default function TerminalView({ sessionId, active, kind }) {
         if (e.type === 'keydown' && replayDepth === 0) wsClient.input(sessionId, '\x1b\r');
         e.preventDefault();
         return false; // swallow keydown/keypress/keyup so xterm never adds a CR
+      }
+      // Ctrl+letter / Esc that a CJK IME masked with keyCode 229: xterm would
+      // drop them (see imeControlKeys.js), so send the recovered byte here and
+      // swallow every phase of the event so xterm cannot double-handle it.
+      // Sent on keydown only; keyup carries the same 229 and must not resend.
+      const imeByte = imeMaskedControlByte(e);
+      if (imeByte !== null) {
+        if (e.type === 'keydown') {
+          e.preventDefault();
+          e.stopPropagation();
+          if (replayDepth === 0) wsClient.input(sessionId, imeByte);
+        }
+        return false;
       }
       // Punctuation: let the browser/IME insert it and forward from `input`
       // (see above). keyup still goes to xterm so its key state resets.
