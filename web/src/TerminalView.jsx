@@ -268,19 +268,25 @@ export default function TerminalView({ sessionId, active, kind }) {
     };
     hostRef.current.addEventListener('input', onInput, true);
 
-    // Answer the synchronized-output probe. On launch Claude Code asks DECRQM
-    // `CSI ?2026$p` and only brackets its repaints with mode 2026 when the
-    // terminal reports the mode as recognized — xterm.js implements neither
-    // DECRQM nor mode 2026, so the probe went unanswered and Claude Code
-    // repainted unsynchronized. Reply "recognized, currently reset"
-    // (`?2026;2$y`) for 2026 only; every other mode stays unanswered exactly
-    // as before. Replay-gated like onData.
+    // Answer terminal capability queries (DECRQM). TUI applications like Claude
+    // Code and Codex query terminal modes to detect what features they can use.
+    // xterm.js doesn't implement DECRQM, leaving queries unanswered and forcing
+    // apps into degraded fallback modes. Reply "recognized, currently reset"
+    // (format: `?<mode>;2$y`) for modes we want to advertise as supported.
+    // Replay-gated like onData.
     term.parser.registerCsiHandler(
       { prefix: '?', intermediates: '$', final: 'p' },
       (params) => {
-        if (params[0] !== 2026) return false;
-        if (replayDepth === 0) wsClient.input(sessionId, '\x1b[?2026;2$y');
-        return true;
+        if (replayDepth > 0) return true;
+        const mode = params[0];
+        // Mode 2026: Synchronized output (batched repaints). Claude Code and
+        // Codex use this to eliminate flicker. Reply "recognized, reset".
+        if (mode === 2026) {
+          wsClient.input(sessionId, '\x1b[?2026;2$y');
+          return true;
+        }
+        // For other modes, let xterm.js handle them (returns false = not handled).
+        return false;
       }
     );
 
