@@ -35,6 +35,7 @@ export class PtySession extends EventEmitter {
     this.exitCode = null;
     this.exitSignal = null;
     this.status = 'starting';
+    this.codexSessionId = null; // Captured after codex starts
     this._idleTimer = null;
     this._killTimer = null;
 

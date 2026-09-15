@@ -6,6 +6,7 @@ import { personaStore } from './personaStore.js';
 import { sessionHistory } from './sessionHistory.js';
 import { CLI_KINDS, REAP_EXITED_AFTER_MS } from './config.js';
 import { transcriptExists } from './claudeSessions.js';
+import { codexSessionExists, getLatestCodexSessionId, waitForNewCodexSession } from './codexSessions.js';
 
 /**
  * Registry of all live PTY sessions. Emits 'sessions' whenever the roster or a
@@ -57,6 +58,7 @@ export class SessionManager extends EventEmitter {
     // claude launch gets a fresh id — including the launch dialog's fork,
     // which we verified re-keys the forked transcript to the supplied id.
     let claudeSessionId = null;
+    let codexSessionId = null;
     let pinnedSessionId = undefined;
     if (persona.kind === 'claude') {
       if (resumeSessionId && forkSession === false) {
@@ -64,6 +66,14 @@ export class SessionManager extends EventEmitter {
       } else {
         claudeSessionId = crypto.randomUUID();
         pinnedSessionId = claudeSessionId;
+      }
+    } else if (persona.kind === 'codex') {
+      // For codex, we track the session ID but don't generate it upfront.
+      // Codex creates its own session ID internally. When resuming, we use
+      // the stored ID from a previous session. If no resume ID, codex will
+      // create a new session and we'll capture its ID later.
+      if (resumeSessionId) {
+        codexSessionId = resumeSessionId;
       }
     }
 
@@ -74,7 +84,7 @@ export class SessionManager extends EventEmitter {
       agent,
       appendSystemPrompt,
       addDirs,
-      resumeSessionId,
+      resumeSessionId: codexSessionId || resumeSessionId,
       autoMode,
       sessionId: pinnedSessionId,
       forkSession,
@@ -94,6 +104,7 @@ export class SessionManager extends EventEmitter {
 
     this.sessions.set(session.id, session);
     session._claudeSessionId = claudeSessionId || null;
+    session._codexSessionId = codexSessionId || null;
 
     // Wire the session up before the awaited history write below: if that
     // write is slow or fails, the child is already running and must not sit
@@ -133,11 +144,27 @@ export class SessionManager extends EventEmitter {
         model: CLI_KINDS[launch.kind]?.modelFlag ? overrides.model || persona.model || null : null,
         autoMode: !!overrides.autoMode,
         claudeSessionId: claudeSessionId || null,
+        codexSessionId: codexSessionId || null,
         createdAt: session.createdAt,
         lastActivity: session.lastActivity,
       },
       { replacesId: replacesHistoryId }
     );
+
+    // For codex sessions without a resume ID, capture the session ID after spawn
+    if (session.kind === 'codex' && !codexSessionId) {
+      const previousSessionId = getLatestCodexSessionId();
+      // Wait in background for codex to create its session
+      waitForNewCodexSession(previousSessionId, 5000).then(newSessionId => {
+        if (newSessionId) {
+          // Update the session history with the captured session ID
+          sessionHistory.update(session.id, { codexSessionId: newSessionId });
+          session.codexSessionId = newSessionId;
+        }
+      }).catch(() => {
+        // Silently fail if we can't capture the session ID
+      });
+    }
 
     this._emitSessions();
     return session;
@@ -225,8 +252,15 @@ export class SessionManager extends EventEmitter {
       } else {
         resumeSessionId = entry.claudeSessionId;
       }
+    } else if (entry.kind === 'codex' && entry.codexSessionId) {
+      const exists = codexSessionExists(entry.codexSessionId);
+      if (exists === false) {
+        resumed = false;
+      } else {
+        resumeSessionId = entry.codexSessionId;
+      }
     } else {
-      // No transcript id ever recorded (non-claude, or an older entry): can't
+      // No transcript id ever recorded (non-claude/codex, or an older entry): can't
       // continue, so reopen is a fresh launch with the stored settings.
       resumed = false;
       if (!entry.cwd) resumeSessionId = undefined;

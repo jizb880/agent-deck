@@ -96,6 +96,19 @@ function usesThirdPartyRelay(baseUrl) {
  * into a `-lc` command string.
  */
 function buildCliArgs(spec, { model, agent, systemPrompt, addDirs, extraArgs, resumeSessionId, autoMode, sessionId, forkSession = true }) {
+  // For CLIs that use a subcommand for resume (like codex: `codex resume <id>`)
+  if (resumeSessionId && spec.resume && spec.resumeViaSubcommand) {
+    const args = ['resume', normalizeSessionId(resumeSessionId)];
+    // Add flags after the resume subcommand
+    if (model && spec.modelFlag) args.push(spec.modelFlag, model);
+    if (agent && spec.agentFlag) args.push(spec.agentFlag, agent);
+    if (systemPrompt && spec.promptFlag) args.push(spec.promptFlag, systemPrompt);
+    if (spec.addDirFlag) for (const d of addDirs) args.push(spec.addDirFlag, d);
+    if (autoMode && spec.bin === 'codex') args.push('--yolo');
+    for (const a of extraArgs) args.push(a);
+    return args;
+  }
+
   // Subcommand first: `openclaw chat --local` / `hermes chat` must precede any
   // flags, and a CLI that is already interactive contributes nothing here.
   const args = [...(spec.subcommand || [])];

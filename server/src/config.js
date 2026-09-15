@@ -152,11 +152,9 @@ export const CLI_KINDS = {
     agentFlag: null,
     promptFlag: null,
     addDirFlag: '--add-dir',
-    // Codex can resume, but as a `codex resume` *subcommand* reading its own
-    // ~/.codex session store — not the `--resume <id> --fork-session` flag pair
-    // this dashboard emits, and not a transcript format claudeSessions.js can
-    // list. Wiring it up is real work, so we don't advertise it.
-    resume: false,
+    // Codex uses `codex resume <session_id>` subcommand instead of --resume flag
+    resume: true,
+    resumeViaSubcommand: true,
   },
   terminal: {
     label: 'Terminal',
