@@ -476,6 +476,12 @@ body {
 
 .term-host { width: 100%; height: 100%; background: #ffffff; }
 
+/* Remove xterm.js default padding to prevent extra spaces when copying code */
+.term-host .xterm-screen {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
 /* ---------- Modals ---------- */
 /* Toast for surfaced protocol errors. */
 .toast {
