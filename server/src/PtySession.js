@@ -67,6 +67,26 @@ export class PtySession extends EventEmitter {
       return false;
     });
 
+    // Answer the synchronized-output probe (DECRQM `CSI ?2026$p`) here, in the
+    // backend, instead of only in the browser. Codex and Claude Code send that
+    // probe within milliseconds of being spawned, but a freshly created session
+    // has no WebSocket attached yet: the browser only attaches once the create
+    // request has returned and React has mounted the pane. Whoever loses that
+    // race leaves the probe unanswered, the CLI concludes the terminal cannot
+    // batch repaints, and it falls back to drawing unsynchronized -- which is
+    // how a Codex composer ends up on screen without its shaded background.
+    // Registered before pty.spawn() below so no probe can slip past, and it
+    // fires whether or not a client is watching. Reply "recognized, currently
+    // reset"; every other mode stays unanswered exactly as before.
+    this._term.parser.registerCsiHandler(
+      { prefix: '?', intermediates: '$', final: 'p' },
+      (params) => {
+        if (params[0] !== 2026) return false;
+        this.write('\x1b[?2026;2$y');
+        return true;
+      }
+    );
+
     this.child = pty.spawn(launch.file, launch.args, {
       name: 'xterm-256color',
       cols: this.cols,
