@@ -36,6 +36,10 @@ export class PtySession extends EventEmitter {
     this.exitSignal = null;
     this.status = 'starting';
     this.codexSessionId = null; // Captured after codex starts
+    // Context-window occupancy for a Claude session, filled in by
+    // SessionManager from the transcript (see contextUsage.js). null means the
+    // figure is not known yet or does not apply to this kind of session.
+    this.context = null; // { tokens, window, percent, model }
     this._idleTimer = null;
     this._killTimer = null;
     // Plain text of the screen at the last repaint that changed it. null until
@@ -342,6 +346,7 @@ export class PtySession extends EventEmitter {
       createdAt: this.createdAt,
       lastActivity: this.lastActivity,
       codexSessionId: this.codexSessionId,
+      context: this.context,
     };
   }
 }

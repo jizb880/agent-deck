@@ -482,6 +482,67 @@ body {
   padding-right: 0 !important;
 }
 
+/* Wrapper that lets an overlay sit above the terminal without disturbing the
+   host's own layout: the host stays the full-size child it always was. */
+.term-wrap { position: relative; width: 100%; height: 100%; }
+
+/* Context-window readout, in the corner the CLI itself uses. Pointer-events
+   are off so it can never swallow a click meant for the terminal beneath it. */
+.ctx-meter {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  z-index: 3;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 7px;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  /* Tinted rather than solid: it sits over live text, so it must stay
+     readable without hiding the line the CLI drew underneath it. */
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.ctx-meter .ctx-bar { width: 34px; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.ctx-meter .ctx-fill { display: block; height: 100%; transition: width 0.3s ease; }
+/* Escalating severity, so "nearly full" is visible without reading the number. */
+.ctx-meter.low .ctx-fill { background: #1a7f37; }
+.ctx-meter.mid .ctx-fill { background: #9a6700; }
+.ctx-meter.high .ctx-fill { background: #cf222e; }
+.ctx-meter.mid { color: #7d5400; }
+.ctx-meter.high { color: #a40e26; }
+
+/* Context-window readout wherever a session is listed. Muted at rest so it
+   never competes with the title, and coloured only as the window fills. */
+.tab-ctx {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  background: rgba(82, 96, 122, 0.1);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.ctx-chip {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.ctx-chip.mid { color: #7d5400; border-color: rgba(154, 103, 0, 0.4); background: rgba(154, 103, 0, 0.08); }
+.ctx-chip.high { color: #a40e26; border-color: rgba(207, 34, 46, 0.4); background: rgba(207, 34, 46, 0.08); }
+
 /* ---------- Modals ---------- */
 /* Toast for surfaced protocol errors. */
 .toast {

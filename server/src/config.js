@@ -24,6 +24,14 @@ export const SCROLLBACK_LINES = Number(process.env.SCROLLBACK_LINES || 10000);
 // Milliseconds of output silence after which a session flips busy -> idle.
 export const IDLE_AFTER_MS = Number(process.env.IDLE_AFTER_MS || 900);
 
+// How often a Claude session's context occupancy is re-read from its
+// transcript. The transcript is appended per assistant turn, so this only
+// needs to be quick enough to feel live, not instant -- and each poll reads
+// just the tail of one file. Polling rather than watching is deliberate: the
+// figure also moves when the file is untouched (nothing to watch), and a
+// watcher per session would leak across reaps.
+export const CONTEXT_POLL_MS = Number(process.env.CONTEXT_POLL_MS || 4000);
+
 // How long an exited session lingers (for final-output reattach) before it is
 // auto-removed and its scrollback freed. 5 minutes by default.
 export const REAP_EXITED_AFTER_MS = Number(

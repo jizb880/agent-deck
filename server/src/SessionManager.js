@@ -4,9 +4,10 @@ import { PtySession } from './PtySession.js';
 import { buildLaunch } from './launcher.js';
 import { personaStore } from './personaStore.js';
 import { sessionHistory } from './sessionHistory.js';
-import { CLI_KINDS, REAP_EXITED_AFTER_MS } from './config.js';
+import { CLI_KINDS, REAP_EXITED_AFTER_MS, CONTEXT_POLL_MS } from './config.js';
 import { transcriptExists } from './claudeSessions.js';
 import { codexSessionExists, getLatestCodexSessionId, waitForNewCodexSession } from './codexSessions.js';
+import { contextUsageFor } from './contextUsage.js';
 
 /**
  * Registry of all live PTY sessions. Emits 'sessions' whenever the roster or a
@@ -17,6 +18,9 @@ export class SessionManager extends EventEmitter {
     super();
     /** @type {Map<string, PtySession>} */
     this.sessions = new Map();
+    // Shared context-occupancy poller; started lazily on the first Claude
+    // session and stopped when the last one goes away.
+    this._contextTimer = null;
   }
 
   list() {
@@ -176,6 +180,13 @@ export class SessionManager extends EventEmitter {
         });
     }
 
+    // Claude sessions carry a transcript id from the start, so context
+    // occupancy can be read as soon as the first turn is written to it.
+    if (session.kind === 'claude') {
+      this._refreshContext(session).catch(() => {});
+      this._ensureContextPoll();
+    }
+
     this._emitSessions();
     return session;
   }
@@ -301,6 +312,49 @@ export class SessionManager extends EventEmitter {
       if (s && s.status === 'exited') this.remove(id);
     }, REAP_EXITED_AFTER_MS);
     if (t.unref) t.unref();
+  }
+
+  /**
+   * Keep every live Claude session's context occupancy up to date.
+   *
+   * The figure is derived from the transcript rather than from anything the
+   * session emits: the CLI only ever shows it on its own status line, so there
+   * is no stream to hook. That also means it moves without any output arriving,
+   * which is why this is a poll and not an event. One shared timer covers all
+   * sessions and stops once none are left, so an idle dashboard does no work.
+   */
+  _ensureContextPoll() {
+    if (this._contextTimer) return;
+    const timer = setInterval(() => {
+      const claude = [...this.sessions.values()].filter(
+        (s) => s.kind === 'claude' && s.status !== 'exited'
+      );
+      if (claude.length === 0) {
+        clearInterval(timer);
+        this._contextTimer = null;
+        return;
+      }
+      for (const s of claude) this._refreshContext(s);
+    }, CONTEXT_POLL_MS);
+    // Never hold the process open for a status readout.
+    if (timer.unref) timer.unref();
+    this._contextTimer = timer;
+  }
+
+  /** Read one session's context usage and broadcast it when it changed. */
+  async _refreshContext(session) {
+    const next = await contextUsageFor({
+      cwd: session.cwd,
+      sessionId: session._claudeSessionId,
+    });
+    // A read that found nothing is not news: the transcript may not exist yet
+    // on a brand new session, and clearing the display on a transient failure
+    // would make the figure flicker away for no reason.
+    if (!next) return;
+    const prev = session.context;
+    if (prev && prev.tokens === next.tokens && prev.window === next.window) return;
+    session.context = next;
+    this._emitSessions();
   }
 
   _emitSessions() {

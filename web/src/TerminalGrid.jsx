@@ -35,6 +35,7 @@ function TabHeader({ session, active, dragging, onActivate, onClose, onDragStart
       <span className={`dot ${session.status}`} />
       <span className="tab-title">{session.title}</span>
       <span className={`kind-badge ${session.kind}`}>{KIND_LABEL[session.kind]}</span>
+      {session.context && <span className="tab-ctx">{session.context.percent}%</span>}
       <button
         className="tab-close"
         onClick={(e) => {
@@ -94,12 +95,20 @@ export default function TerminalGrid({
                     <span className={`kind-badge ${byId.get(id).kind}`}>
                       {KIND_LABEL[byId.get(id).kind]}
                     </span>
+                    {byId.get(id).context && (
+                      <span className="tab-ctx">{byId.get(id).context.percent}%</span>
+                    )}
                     <button className="tab-close" onClick={() => onCloseTab(id)}>
                       ×
                     </button>
                   </div>
                   <div className="pane-body" onMouseDown={() => onActivate(id)}>
-                    <TerminalView sessionId={id} active={id === activeId} kind={byId.get(id).kind} />
+                    <TerminalView
+              sessionId={id}
+              active={id === activeId}
+              kind={byId.get(id).kind}
+              context={byId.get(id).context}
+            />
                   </div>
                 </div>
               </Panel>
@@ -134,7 +143,12 @@ export default function TerminalGrid({
             key={id}
             className={`tab-pane ${id === activeId ? 'active' : 'inactive'}`}
           >
-            <TerminalView sessionId={id} active={id === activeId} kind={byId.get(id).kind} />
+            <TerminalView
+              sessionId={id}
+              active={id === activeId}
+              kind={byId.get(id).kind}
+              context={byId.get(id).context}
+            />
           </div>
         ))}
       </div>

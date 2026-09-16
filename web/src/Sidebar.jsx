@@ -163,6 +163,14 @@ function SessionRow({
         <div className="sess-sub">
           <span className={`kind-badge ${session.kind}`}>{KIND_LABEL[session.kind]}</span>
           <span className="status-text">{STATUS_LABEL[session.status] || session.status}</span>
+          {session.context && (
+            <span
+              className={`ctx-chip ${session.context.percent >= 85 ? 'high' : session.context.percent >= 60 ? 'mid' : ''}`}
+              title={`上下文用量 ${session.context.percent}%（${session.context.tokens.toLocaleString()} / ${session.context.window.toLocaleString()} tokens）`}
+            >
+              ctx {session.context.percent}%
+            </span>
+          )}
         </div>
         <div
           className={`sess-cwd${copied ? ' copied' : ''}`}

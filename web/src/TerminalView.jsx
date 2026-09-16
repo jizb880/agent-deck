@@ -41,7 +41,7 @@ const LIGHT_THEME = {
  * container, retrying until the container actually has a size (so a freshly
  * mounted pane never advertises 0 cols to the backend).
  */
-export default function TerminalView({ sessionId, active, kind }) {
+export default function TerminalView({ sessionId, active, kind, context }) {
   const hostRef = useRef(null);
   const termRef = useRef(null);
   const fitRef = useRef(null);
@@ -578,5 +578,32 @@ export default function TerminalView({ sessionId, active, kind }) {
     };
   }, [active, sessionId]);
 
-  return <div className="term-host" ref={hostRef} />;
+  return (
+    <div className="term-wrap">
+      <div className="term-host" ref={hostRef} />
+      {context && <ContextMeter context={context} />}
+    </div>
+  );
+}
+
+// How full the session's context window is, in the corner the CLI shows it.
+// Kept as a small overlay rather than a status bar so it costs no terminal
+// rows: the PTY is sized to this pane, and reserving space for a badge would
+// shrink every CLI's layout to make room for it.
+function ContextMeter({ context }) {
+  const { percent, tokens, window: windowSize } = context;
+  if (!Number.isFinite(percent)) return null;
+  const level = percent >= 85 ? 'high' : percent >= 60 ? 'mid' : 'low';
+  return (
+    <div
+      className={`ctx-meter ${level}`}
+      title={`上下文用量 ${percent}%（${tokens.toLocaleString()} / ${windowSize.toLocaleString()} tokens）`}
+    >
+      <span>context</span>
+      <span className="ctx-bar">
+        <span className="ctx-fill" style={{ width: `${percent}%` }} />
+      </span>
+      <span>{percent}%</span>
+    </div>
+  );
 }
