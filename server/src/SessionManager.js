@@ -151,21 +151,29 @@ export class SessionManager extends EventEmitter {
       { replacesId: replacesHistoryId }
     );
 
-    // For codex sessions without a resume ID, capture the session ID after spawn
+    // Capture the id of a freshly started codex conversation, so reopening it
+    // from the Recent list resumes it instead of starting over.
+    //
+    // Codex records nothing at spawn and never prints its id: the thread row
+    // appears only once the first message is sent. So this watches in the
+    // background rather than waiting a fixed moment after launch, and fires
+    // whenever the conversation actually begins. Until then there is nothing to
+    // resume, and a session the user never sent anything to has no id to store.
     if (session.kind === 'codex' && !codexSessionId) {
-      const previousSessionId = getLatestCodexSessionId();
-      // Wait in background for codex to create its session
-      waitForNewCodexSession(previousSessionId, 10000).then(newSessionId => {
-        if (newSessionId) {
-          // Update the session history with the captured session ID
+      getLatestCodexSessionId()
+        .then((previousSessionId) => waitForNewCodexSession(previousSessionId))
+        .then((newSessionId) => {
+          // A session that exited and left the roster has no row left to
+          // update, and no reason to keep holding an id for.
+          if (!newSessionId || this.sessions.get(session.id) !== session) return;
           sessionHistory.update(session.id, { codexSessionId: newSessionId });
           session.codexSessionId = newSessionId;
-          // Broadcast the updated roster so clients receive the codexSessionId
+          // Re-broadcast so clients pick up the id with the rest of the roster.
           this._emitSessions();
-        }
-      }).catch(() => {
-        // Silently fail if we can't capture the session ID
-      });
+        })
+        .catch(() => {
+          // Losing the id costs a resume, not the session; stay silent.
+        });
     }
 
     this._emitSessions();
@@ -255,7 +263,7 @@ export class SessionManager extends EventEmitter {
         resumeSessionId = entry.claudeSessionId;
       }
     } else if (entry.kind === 'codex' && entry.codexSessionId) {
-      const exists = codexSessionExists(entry.codexSessionId);
+      const exists = await codexSessionExists(entry.codexSessionId);
       if (exists === false) {
         resumed = false;
       } else {
