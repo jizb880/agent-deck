@@ -266,6 +266,7 @@ export class PtySession extends EventEmitter {
       exitSignal: this.exitSignal,
       createdAt: this.createdAt,
       lastActivity: this.lastActivity,
+      codexSessionId: this.codexSessionId,
     };
   }
 }

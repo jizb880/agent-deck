@@ -104,7 +104,7 @@ export class SessionManager extends EventEmitter {
 
     this.sessions.set(session.id, session);
     session._claudeSessionId = claudeSessionId || null;
-    session._codexSessionId = codexSessionId || null;
+    session.codexSessionId = codexSessionId || null;
 
     // Wire the session up before the awaited history write below: if that
     // write is slow or fails, the child is already running and must not sit
@@ -155,11 +155,13 @@ export class SessionManager extends EventEmitter {
     if (session.kind === 'codex' && !codexSessionId) {
       const previousSessionId = getLatestCodexSessionId();
       // Wait in background for codex to create its session
-      waitForNewCodexSession(previousSessionId, 5000).then(newSessionId => {
+      waitForNewCodexSession(previousSessionId, 10000).then(newSessionId => {
         if (newSessionId) {
           // Update the session history with the captured session ID
           sessionHistory.update(session.id, { codexSessionId: newSessionId });
           session.codexSessionId = newSessionId;
+          // Broadcast the updated roster so clients receive the codexSessionId
+          this._emitSessions();
         }
       }).catch(() => {
         // Silently fail if we can't capture the session ID
