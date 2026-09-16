@@ -133,7 +133,7 @@ function buildCliArgs(spec, { model, agent, systemPrompt, addDirs, extraArgs, re
   // Never paired with an in-place --resume: claude rejects `--session-id`
   // alongside --resume unless --fork-session is also given, and the resumed
   // conversation already has its id.
-  if (sessionId && spec.resume && !(resumeSessionId && !forkSession)) {
+  if (sessionId && spec.resume && !spec.resumeViaSubcommand && !(resumeSessionId && !forkSession)) {
     const id = normalizeSessionId(sessionId);
     if (!id) throw new Error(`Invalid session id: ${sessionId}`);
     args.push('--session-id', id);

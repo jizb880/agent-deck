@@ -343,9 +343,7 @@ test('resume is rejected for kinds that cannot resume, on every platform', () =>
     ]);
     const env =
       platform === 'win32' ? WIN_ENV(bin) : { PATH: bin, HOME: os.tmpdir() };
-    // codex *can* resume, but only via its own `codex resume` subcommand
-    // reading ~/.codex — not the --resume/--fork-session pair emitted here.
-    for (const kind of ['opencode', 'codex', 'terminal']) {
+    for (const kind of ['opencode', 'terminal']) {
       assert.throws(
         () =>
           withPlatform({ platform, env }, () =>
