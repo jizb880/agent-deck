@@ -38,6 +38,10 @@ export class PtySession extends EventEmitter {
     this.codexSessionId = null; // Captured after codex starts
     this._idleTimer = null;
     this._killTimer = null;
+    // Plain text of the screen at the last repaint that changed it. null until
+    // the first render, so a session whose opening frame is blank still counts
+    // as having drawn something. See _onRendered().
+    this._lastScreen = null;
 
     // Everything the child ever printed, as the terminal *rendered* it. The
     // previous design kept the last 1 MiB of raw bytes, but a TUI like Claude
@@ -67,25 +71,35 @@ export class PtySession extends EventEmitter {
       return false;
     });
 
-    // Answer the synchronized-output probe (DECRQM `CSI ?2026$p`) here, in the
-    // backend, instead of only in the browser. Codex and Claude Code send that
-    // probe within milliseconds of being spawned, but a freshly created session
-    // has no WebSocket attached yet: the browser only attaches once the create
-    // request has returned and React has mounted the pane. Whoever loses that
-    // race leaves the probe unanswered, the CLI concludes the terminal cannot
-    // batch repaints, and it falls back to drawing unsynchronized -- which is
-    // how a Codex composer ends up on screen without its shaded background.
-    // Registered before pty.spawn() below so no probe can slip past, and it
-    // fires whether or not a client is watching. Reply "recognized, currently
-    // reset"; every other mode stays unanswered exactly as before.
-    this._term.parser.registerCsiHandler(
-      { prefix: '?', intermediates: '$', final: 'p' },
-      (params) => {
-        if (params[0] !== 2026) return false;
-        this.write('\x1b[?2026;2$y');
+    // Reply to the terminal probes the CLIs send at startup. A freshly created
+    // session has no WebSocket attached yet -- the browser only attaches once
+    // the create request has returned and React has mounted the pane -- so a
+    // probe sent in the first milliseconds has nobody to answer it and the CLI
+    // commits to a guess. Doing it here means the answer is always available,
+    // because this emulator has been parsing the child's output since its first
+    // byte. Registered before pty.spawn() below so nothing can slip past.
+    //
+    // OSC 10 / OSC 11 ask for the terminal's foreground and background colours.
+    // Codex asks both at startup and keys its whole palette off the reply: it
+    // paints for a light terminal when told the background is white and for a
+    // dark one otherwise, and the two use different colour vocabularies
+    // (measured: 14 distinct SGR sequences when answered versus 12 when not).
+    // xterm.js cannot answer at all -- it registers handlers for *setting*
+    // these colours and ignores the query form -- which is why a Codex dialog
+    // could come up styled for the opposite theme. The dashboard's theme is a
+    // fixed light one (see LIGHT_THEME in web/src/TerminalView.jsx), so the
+    // answer is a constant rather than anything client-dependent.
+    for (const [code, rgb] of [
+      [10, 'rgb:2429/2f24/2f24'],
+      [11, 'rgb:ffff/ffff/ffff'],
+    ]) {
+      this._term.parser.registerOscHandler(code, (payload) => {
+        // "?" is the query form; anything else is the CLI *setting* the colour,
+        // which xterm.js already tracks and which needs no reply.
+        if (payload === '?') this.write(`\x1b]${code};${rgb}\x1b\\`);
         return true;
-      }
-    );
+      });
+    }
 
     this.child = pty.spawn(launch.file, launch.args, {
       name: 'xterm-256color',
@@ -102,10 +116,51 @@ export class PtySession extends EventEmitter {
   }
 
   _onData(data) {
-    this._lastWrite = new Promise((resolve) => this._term.write(data, resolve));
+    this._lastWrite = new Promise((resolve) =>
+      this._term.write(data, () => {
+        // A throwing status heuristic must never strand this promise:
+        // getSnapshot() awaits it, so a rejection would hang every later
+        // snapshot and leave the pane blank on reattach.
+        try {
+          this._onRendered();
+        } catch {
+          /* status is cosmetic; output handling is not */
+        }
+        resolve();
+      })
+    );
     this.lastActivity = Date.now();
-    this._markBusy();
     this.emit('data', data);
+  }
+
+  // Busy/idle follows what the terminal *shows*, not whether bytes arrived.
+  //
+  // An idle Codex repaints about twelve times a second to animate the row it
+  // has highlighted, re-printing the same characters with only colour
+  // attributes changed. Measured over a settled 15 second window: 205 chunks
+  // arriving, 0 changes to the rendered text, and no gap wider than 288 ms.
+  // Since every chunk used to re-arm the idle timer, and that timer needs
+  // IDLE_AFTER_MS of quiet to fire, a Codex session that had already finished
+  // its task reported "busy" indefinitely -- the sidebar's 处理中 that never
+  // cleared. Counting a repaint as activity only when the screen text actually
+  // changes settles it: a spinner, a streamed answer or an elapsed-time
+  // counter still all register, while a pure colour animation does not.
+  _onRendered() {
+    const screen = this._screenText();
+    if (screen === this._lastScreen) return;
+    this._lastScreen = screen;
+    this._markBusy();
+  }
+
+  /** Plain text of the visible screen, styling and trailing blanks excluded. */
+  _screenText() {
+    const buf = this._term.buffer.active;
+    const lines = [];
+    for (let i = 0; i < this._term.rows; i++) {
+      const line = buf.getLine(buf.viewportY + i);
+      lines.push(line ? line.translateToString(true) : '');
+    }
+    return lines.join('\n');
   }
 
   _markBusy() {
