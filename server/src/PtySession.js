@@ -162,11 +162,24 @@ export class PtySession extends EventEmitter {
   // seconds, but those were confined to three symbol-only rows and the session
   // was using 0.1% CPU. On a working session the same measure tracked the run
   // exactly, from the first streamed line to the last.
+  //
+  // Additional filtering: minor changes (status bars, timestamps, single-char
+  // updates) that represent < 5% of screen content don't reset the idle timer.
   _onRendered() {
     const screen = this._screenText();
     if (screen === this._lastScreen) return;
+
+    // Calculate change magnitude: only significant changes count as activity
+    const prevLen = this._lastScreen?.length || 0;
+    const currLen = screen.length;
+    const changeRatio = prevLen > 0 ? Math.abs(currLen - prevLen) / prevLen : 1;
+
     this._lastScreen = screen;
-    this._markBusy();
+
+    // Only mark busy if change is > 5% or this is the first content
+    if (prevLen === 0 || changeRatio > 0.05) {
+      this._markBusy();
+    }
   }
 
   /**

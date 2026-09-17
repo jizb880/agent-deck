@@ -22,7 +22,9 @@ export const PORT = Number(process.env.PORT || 4173);
 export const SCROLLBACK_LINES = Number(process.env.SCROLLBACK_LINES || 10000);
 
 // Milliseconds of output silence after which a session flips busy -> idle.
-export const IDLE_AFTER_MS = Number(process.env.IDLE_AFTER_MS || 900);
+// Increased to 2500ms to account for minor UI updates (status bars, timestamps)
+// that don't represent actual work.
+export const IDLE_AFTER_MS = Number(process.env.IDLE_AFTER_MS || 2500);
 
 // How often a Claude session's context occupancy is re-read from its
 // transcript. The transcript is appended per assistant turn, so this only
