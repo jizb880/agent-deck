@@ -250,6 +250,71 @@ function canonicalDir(dir) {
 }
 
 /**
+ * Every session id codex currently knows about, as a Set.
+ *
+ * Used to tell a *new* conversation apart from one that already existed: codex
+ * records nothing at spawn, so the only way to recognise the one a given
+ * session just started is to compare against what was there before.
+ */
+export async function listCodexSessionIds() {
+  const rows = await listThreads(2000);
+  const ids = new Set();
+  for (const r of rows) {
+    if (r.id && SESSION_ID_RE.test(r.id)) ids.add(r.id);
+  }
+  if (ids.size === 0) {
+    // Fallback for a codex that still writes rollout files.
+    for (let daysAgo = 0; daysAgo < 2; daysAgo++) {
+      for (const f of rolloutFilesIn(dayDir(new Date(Date.now() - daysAgo * 86_400_000)))) {
+        const id = sessionIdFromRollout(f);
+        if (id) ids.add(id);
+      }
+    }
+    const fromIndex = latestFromIndex();
+    if (fromIndex) ids.add(fromIndex);
+  }
+  return ids;
+}
+
+/**
+ * Watch for a codex conversation to appear that was not in `knownIds`, and
+ * return its id, or null on timeout.
+ *
+ * `cwd` scopes the watch to one working directory. Without it two sessions
+ * running side by side both claim whichever thread appears first — which is
+ * exactly how two different projects ended up sharing one stored id, so the
+ * second of them would resume the first one's conversation.
+ *
+ * Codex writes a thread row only once the first message is sent, so this fires
+ * when the conversation actually begins rather than at launch; until then there
+ * is no id to store and nothing to resume.
+ */
+export async function waitForNewCodexSessionIn(cwd, knownIds, timeoutMs = 15 * 60_000) {
+  const startTime = Date.now();
+  const want = cwd ? canonicalDir(cwd) : null;
+  const skip = knownIds instanceof Set ? knownIds : new Set(knownIds || []);
+
+  while (Date.now() - startTime < timeoutMs) {
+    const rows = await listThreads(50);
+    for (const r of rows) {
+      if (!r.id || skip.has(r.id) || !SESSION_ID_RE.test(r.id)) continue;
+      if (want && canonicalDir(r.cwd) !== want) continue;
+      return r.id;
+    }
+
+    // Fallback: a codex build that still writes rollout files.
+    if (rows.length === 0) {
+      for (const f of rolloutFilesIn(dayDir(new Date()))) {
+        const id = sessionIdFromRollout(f);
+        if (id && !skip.has(id)) return id;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  return null;
+}
+
+/**
  * Conversations available to resume, newest first, for a picker UI:
  * [{ sessionId, title, cwd, updatedAt }]. Empty when the record cannot be read.
  */
@@ -270,38 +335,3 @@ export async function listCodexSessions({ cwd, limit = 30 } = {}) {
   return entries.slice(0, limit);
 }
 
-/**
- * Watch for a *new* codex conversation to appear, i.e. one whose id differs
- * from `previousSessionId`. Resolves to its id, or null on timeout.
- *
- * A fresh codex writes its thread row only once the first message is sent — it
- * does not record anything at spawn and never prints its id. So this cannot
- * fire at launch; it fires once the user actually starts the conversation,
- * which is also the first moment the conversation could be resumed again. The
- * poll is deliberately long-lived for that reason.
- */
-export async function waitForNewCodexSession(previousSessionId, timeoutMs = 15 * 60_000) {
-  const startTime = Date.now();
-  // Rollout files that already exist, so the fallback path can tell a new file
-  // apart from a pre-existing one.
-  const initialDir = dayDir(new Date());
-  const seenBefore = new Set(rolloutFilesIn(initialDir));
-
-  while (Date.now() - startTime < timeoutMs) {
-    const threads = await listThreads(1);
-    if (threads.length > 0) {
-      const id = threads[0].id;
-      if (id && id !== previousSessionId) return id;
-    } else {
-      // Fallback path for codex builds that still write rollout files.
-      const dir = dayDir(new Date());
-      for (const f of rolloutFilesIn(dir)) {
-        if (dir === initialDir && seenBefore.has(f)) continue;
-        const id = sessionIdFromRollout(f);
-        if (id && id !== previousSessionId) return id;
-      }
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-  return null;
-}

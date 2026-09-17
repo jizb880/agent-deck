@@ -6,7 +6,7 @@ import { personaStore } from './personaStore.js';
 import { sessionHistory } from './sessionHistory.js';
 import { CLI_KINDS, REAP_EXITED_AFTER_MS, CONTEXT_POLL_MS } from './config.js';
 import { transcriptExists } from './claudeSessions.js';
-import { codexSessionExists, getLatestCodexSessionId, waitForNewCodexSession } from './codexSessions.js';
+import { codexSessionExists, listCodexSessionIds, waitForNewCodexSessionIn } from './codexSessions.js';
 import { contextUsageFor } from './contextUsage.js';
 
 /**
@@ -163,10 +163,17 @@ export class SessionManager extends EventEmitter {
     // background rather than waiting a fixed moment after launch, and fires
     // whenever the conversation actually begins. Until then there is nothing to
     // resume, and a session the user never sent anything to has no id to store.
+    //
+    // Scoped by cwd and by the ids that already existed. Both matter: a
+    // parallel session in another directory writes its row at the same time,
+    // and taking "whatever is newest" handed one session the other's id -- so
+    // reopening either one resumed the same wrong conversation.
     if (session.kind === 'codex' && !codexSessionId) {
-      getLatestCodexSessionId()
-        .then((previousSessionId) => waitForNewCodexSession(previousSessionId))
-        .then((newSessionId) => {
+      listCodexSessionIds()
+        .then((known) =>
+          waitForNewCodexSessionIn(session.cwd, known).then((newSessionId) => [newSessionId, known])
+        )
+        .then(([newSessionId]) => {
           // A session that exited and left the roster has no row left to
           // update, and no reason to keep holding an id for.
           if (!newSessionId || this.sessions.get(session.id) !== session) return;

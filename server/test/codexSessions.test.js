@@ -207,3 +207,48 @@ test('nothing recorded anywhere is unknown, never a false "gone"', async () => {
     assert.deepEqual(await m.listCodexSessions(), []);
   });
 });
+
+// ---- capture of a newly started conversation ----
+
+test('a new session is recognised only in the directory it belongs to', async (t) => {
+  // The bug this covers: two sessions in different directories both waited for
+  // "the newest thread", so whichever started a conversation first had its id
+  // claimed by both -- and reopening either one resumed the same conversation.
+  const { home, codexDir } = makeCodexHome();
+  if (
+    !writeStateDb(codexDir, [
+      { id: ID_A, cwd: '/tmp/other-project', title: 'unrelated', createdAt: 300 },
+    ])
+  ) {
+    return t.skip('node:sqlite unavailable');
+  }
+  await withCodexHome(home, async (m) => {
+    const known = await m.listCodexSessionIds();
+    // A thread that already existed is never "the new one", and a thread in a
+    // different directory is not ours to claim.
+    const claimed = await m.waitForNewCodexSessionIn('/tmp/my-project', known, 1200);
+    assert.equal(claimed, null, 'must not claim a session from another cwd');
+
+    // And the id it does know about is still reported for its own directory.
+    assert.equal(await m.codexSessionExists(ID_A), true);
+  });
+});
+
+test('listCodexSessionIds reports every known conversation', async (t) => {
+  const { home, codexDir } = makeCodexHome();
+  if (
+    !writeStateDb(codexDir, [
+      { id: ID_A, cwd: '/tmp/x', title: 'a', createdAt: 200 },
+      { id: ID_B, cwd: '/tmp/y', title: 'b', createdAt: 100 },
+    ])
+  ) {
+    return t.skip('node:sqlite unavailable');
+  }
+  await withCodexHome(home, async (m) => {
+    const ids = await m.listCodexSessionIds();
+    assert.equal(ids.has(ID_A), true);
+    assert.equal(ids.has(ID_B), true);
+    // An id that is not in the record must not be treated as pre-existing.
+    assert.equal(ids.has('11111111-1111-1111-1111-111111111111'), false);
+  });
+});
