@@ -2,23 +2,24 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { claudeProjectsDir } from './config.js';
+import { codexRolloutPath } from './codexSessions.js';
 
 /**
- * How full a Claude Code session's context window is.
+ * How full a session's context window is.
  *
- * The CLI computes this for its own status line, but only inside the TUI: it
- * never writes the figure to the transcript, and the number on screen is
- * repainted constantly, so there is nothing stable to scrape. What the
- * transcript *does* record, on every assistant turn, is the token accounting
- * the API returned for that call — and the sum of the input side of that is
- * exactly what occupies the context window:
+ * The CLIs compute this for their own status lines, but only inside the TUI:
+ * neither writes the figure anywhere convenient, and the number on screen is
+ * repainted constantly, so there is nothing stable to scrape. What both *do*
+ * record is the token accounting the API returned for each call, which is
+ * exactly what occupies the window.
  *
- *   input_tokens + cache_creation_input_tokens + cache_read_input_tokens
+ * Claude Code:  input_tokens + cache_creation_input_tokens + cache_read_input_tokens
+ * Codex:        input_tokens (its `cached_input_tokens` is a subset of it)
  *
- * `input_tokens` alone is misleading: with prompt caching almost the whole
- * conversation arrives as `cache_read`, so a nearly-full window can report
- * `input_tokens: 4`. All three together are the size of the prompt that was
- * sent, which is the quantity the CLI shows a percentage of.
+ * `input_tokens` alone is misleading for Claude: with prompt caching almost the
+ * whole conversation arrives as `cache_read`, so a nearly-full window can
+ * report `input_tokens: 4`. Summing the three gives the size of the prompt that
+ * was sent, which is the quantity a percentage is taken of.
  */
 
 // Context windows by model, in tokens. Read from the transcript's model field;
@@ -108,6 +109,51 @@ export function latestUsageFromText(text) {
 }
 
 /**
+ * Scan a Codex rollout tail for its token accounting.
+ *
+ * Codex writes one line per event and marks the token figures explicitly:
+ * `token_usage_record` carries the usage block and an `event_msg` carries
+ * `model_context_window`. Only input tokens occupy the window, and codex counts
+ * `cached_input_tokens` as a subset of `input_tokens` (unlike Claude, where the
+ * cached counts are separate fields), so the input figure is taken as-is.
+ *
+ * Returns { tokens, window, model } or null when the tail holds no usage.
+ */
+export function latestCodexUsageFromText(text) {
+  if (!text) return null;
+  const lines = text.split('\n');
+  let tokens = null;
+  let window = null;
+  // Walk backwards so the newest of each field wins, without needing the two to
+  // sit on the same line -- codex writes them in different records.
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (!line || line.charCodeAt(0) !== 123 /* '{' */) continue;
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const payload = entry?.payload;
+    if (!payload || typeof payload !== 'object') continue;
+    if (tokens === null && entry.type === 'token_usage_record') {
+      const n = Number(payload?.usage?.input_tokens);
+      if (Number.isFinite(n) && n > 0) tokens = n;
+    }
+    if (window === null && Number.isFinite(Number(payload.model_context_window))) {
+      const w = Number(payload.model_context_window);
+      if (w > 0) window = w;
+    }
+    if (tokens !== null && window !== null) break;
+  }
+  if (tokens === null) return null;
+  // Codex usually records its own window; when it has not (or an older build
+  // omits it) fall back to the same default the Claude path uses.
+  return { tokens, window: window || DEFAULT_WINDOW, model: null };
+}
+
+/**
  * Locate a Claude Code transcript by session id.
  *
  * The directory is named after the session's cwd with every non-alphanumeric
@@ -155,8 +201,20 @@ async function findTranscript(cwd, sessionId) {
  *
  * Returns { tokens, window, percent, model }.
  */
-export async function contextUsageFor({ cwd, sessionId }) {
+export async function contextUsageFor({ cwd, sessionId, kind }) {
   if (!sessionId || typeof sessionId !== 'string') return null;
+
+  if (kind === 'codex') {
+    const rolloutPath = await codexRolloutPath(sessionId);
+    if (!rolloutPath) return null;
+    const text = await readTail(rolloutPath);
+    if (text === null) return null;
+    const usage = latestCodexUsageFromText(text);
+    if (!usage) return null;
+    const percent = Math.max(0, Math.min(100, Math.round((usage.tokens / usage.window) * 100)));
+    return { tokens: usage.tokens, window: usage.window, percent, model: usage.model };
+  }
+
   const file = await findTranscript(cwd, sessionId);
   if (!file) return null;
   const text = await readTail(file);

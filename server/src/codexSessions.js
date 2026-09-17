@@ -100,6 +100,54 @@ async function listThreads(limit = 200) {
   );
 }
 
+/**
+ * Path of the JSONL file codex records a conversation into, or null.
+ *
+ * The file holds the per-turn token accounting, which is what the context
+ * readout is derived from. Older codex builds keep it under the day directory,
+ * as `rollout_path` spells out; when the column is absent the same file is
+ * reconstructed from the day layout so the lookup still works.
+ */
+export async function codexRolloutPath(sessionId) {
+  if (!sessionId || typeof sessionId !== 'string' || !SESSION_ID_RE.test(sessionId)) return null;
+
+  const rows = await queryThreads(
+    `SELECT rollout_path FROM threads WHERE id = '${sessionId.replace(/'/g, "''")}' LIMIT 1`
+  );
+  if (rows.length > 0 && rows[0].rollout_path) return rows[0].rollout_path;
+
+  // Fallback: find the file by name across the day directories.
+  try {
+    if (!fs.existsSync(CODEX_SESSIONS_DIR)) return null;
+    for (const year of fs.readdirSync(CODEX_SESSIONS_DIR).sort().reverse()) {
+      const yearDir = path.join(CODEX_SESSIONS_DIR, year);
+      let months;
+      try {
+        months = fs.readdirSync(yearDir).sort().reverse();
+      } catch {
+        continue;
+      }
+      for (const month of months) {
+        const monthDir = path.join(yearDir, month);
+        let days;
+        try {
+          days = fs.readdirSync(monthDir).sort().reverse();
+        } catch {
+          continue;
+        }
+        for (const day of days) {
+          for (const f of rolloutFilesIn(path.join(monthDir, day))) {
+            if (f.includes(sessionId)) return path.join(monthDir, day, f);
+          }
+        }
+      }
+    }
+  } catch {
+    /* unreadable directory is not an error worth surfacing */
+  }
+  return null;
+}
+
 // ---- fallback: the pre-0.154 on-disk rollout layout ----
 
 const CODEX_SESSIONS_DIR = path.join(CODEX_DIR, 'sessions');

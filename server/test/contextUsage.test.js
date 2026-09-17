@@ -155,3 +155,59 @@ test('a malformed transcript does not throw', async () => {
     assert.equal(usage.tokens, 20_000, 'the good record is still found');
   });
 });
+
+// ---- codex ----
+
+test('codex occupancy is read from its rollout usage record', async () => {
+  await withProjectsRoot(async (m) => {
+    // Codex marks the figures explicitly: a token_usage_record carries the
+    // usage block and a separate event_msg carries the window size.
+    const lines = [
+      JSON.stringify({ type: 'session_meta', payload: { session_id: 'x', cwd: '/tmp/p' } }),
+      JSON.stringify({
+        type: 'token_usage_record',
+        payload: {
+          usage: { input_tokens: 16_200, cached_input_tokens: 12_288, output_tokens: 115, total_tokens: 16_315 },
+        },
+      }),
+      JSON.stringify({ type: 'event_msg', payload: { model_context_window: 258_400 } }),
+    ];
+    const usage = m.latestCodexUsageFromText(lines.join('\n'));
+    assert.ok(usage, 'usage found');
+    // input_tokens is the whole prompt; cached_input_tokens is a subset of it,
+    // so it must NOT be added on top the way Claude's separate fields are.
+    assert.equal(usage.tokens, 16_200);
+    assert.equal(usage.window, 258_400);
+  });
+});
+
+test('codex falls back to a default window when none is recorded', async () => {
+  await withProjectsRoot(async (m) => {
+    const text = JSON.stringify({
+      type: 'token_usage_record',
+      payload: { usage: { input_tokens: 50_000, cached_input_tokens: 0, total_tokens: 50_100 } },
+    });
+    const usage = m.latestCodexUsageFromText(text);
+    assert.equal(usage.tokens, 50_000);
+    assert.equal(usage.window, 200_000, 'unknown window falls back rather than dividing by zero');
+  });
+});
+
+test('the newest codex usage wins, even across record types', async () => {
+  await withProjectsRoot(async (m) => {
+    const text = [
+      JSON.stringify({ type: 'token_usage_record', payload: { usage: { input_tokens: 1_000 } } }),
+      JSON.stringify({ type: 'event_msg', payload: { model_context_window: 258_400 } }),
+      JSON.stringify({ type: 'token_usage_record', payload: { usage: { input_tokens: 90_000 } } }),
+    ].join('\n');
+    const usage = m.latestCodexUsageFromText(text);
+    assert.equal(usage.tokens, 90_000);
+  });
+});
+
+test('a codex rollout with no turns yet reports nothing', async () => {
+  await withProjectsRoot(async (m) => {
+    const text = JSON.stringify({ type: 'session_meta', payload: { session_id: 'x' } });
+    assert.equal(m.latestCodexUsageFromText(text), null);
+  });
+});

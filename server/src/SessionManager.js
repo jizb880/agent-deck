@@ -179,6 +179,9 @@ export class SessionManager extends EventEmitter {
           if (!newSessionId || this.sessions.get(session.id) !== session) return;
           sessionHistory.update(session.id, { codexSessionId: newSessionId });
           session.codexSessionId = newSessionId;
+          // The poll only tracks sessions with an id to read, and this session
+          // did not have one when it was created, so start it now.
+          this._ensureContextPoll();
           // Re-broadcast so clients pick up the id with the rest of the roster.
           this._emitSessions();
         })
@@ -187,9 +190,11 @@ export class SessionManager extends EventEmitter {
         });
     }
 
-    // Claude sessions carry a transcript id from the start, so context
-    // occupancy can be read as soon as the first turn is written to it.
-    if (session.kind === 'claude') {
+    // Start tracking occupancy as soon as there is a session file to read.
+    // A Claude session carries its transcript id from the start; a codex one
+    // that was just *resumed* already has an id, even though a fresh codex
+    // session does not and will be picked up later when its id is captured.
+    if (this._contextSessionId(session)) {
       this._refreshContext(session).catch(() => {});
       this._ensureContextPoll();
     }
@@ -322,39 +327,54 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Keep every live Claude session's context occupancy up to date.
-   *
-   * The figure is derived from the transcript rather than from anything the
-   * session emits: the CLI only ever shows it on its own status line, so there
-   * is no stream to hook. That also means it moves without any output arriving,
-   * which is why this is a poll and not an event. One shared timer covers all
-   * sessions and stops once none are left, so an idle dashboard does no work.
+   * Keep every live session's context occupancy up to date, for the CLIs that
+   * record it. The figure is derived from the CLI's own session file rather
+   * than from anything the session emits: each only ever shows it on its own
+   * status line, so there is no stream to hook. That also means it moves
+   * without any output arriving, which is why this is a poll and not an event.
+   * One shared timer covers all sessions and stops once none are left, so an
+   * idle dashboard does no work.
    */
   _ensureContextPoll() {
     if (this._contextTimer) return;
     const timer = setInterval(() => {
-      const claude = [...this.sessions.values()].filter(
-        (s) => s.kind === 'claude' && s.status !== 'exited'
+      const tracked = [...this.sessions.values()].filter(
+        (s) => s.status !== 'exited' && this._contextSessionId(s)
       );
-      if (claude.length === 0) {
+      if (tracked.length === 0) {
         clearInterval(timer);
         this._contextTimer = null;
         return;
       }
-      for (const s of claude) this._refreshContext(s);
+      for (const s of tracked) this._refreshContext(s);
     }, CONTEXT_POLL_MS);
     // Never hold the process open for a status readout.
     if (timer.unref) timer.unref();
     this._contextTimer = timer;
   }
 
+  /**
+   * The id whose session file holds this session's token accounting, or null
+   * when the session has none to read. Codex only gains one once its first
+   * message is sent, so a fresh codex session starts untracked and is picked up
+   * by the poll as soon as the id is captured.
+   */
+  _contextSessionId(session) {
+    if (session.kind === 'claude') return session._claudeSessionId;
+    if (session.kind === 'codex') return session.codexSessionId;
+    return null;
+  }
+
   /** Read one session's context usage and broadcast it when it changed. */
   async _refreshContext(session) {
+    const sessionId = this._contextSessionId(session);
+    if (!sessionId) return;
     const next = await contextUsageFor({
       cwd: session.cwd,
-      sessionId: session._claudeSessionId,
+      sessionId,
+      kind: session.kind,
     });
-    // A read that found nothing is not news: the transcript may not exist yet
+    // A read that found nothing is not news: the session file may not exist yet
     // on a brand new session, and clearing the display on a transient failure
     // would make the figure flicker away for no reason.
     if (!next) return;
