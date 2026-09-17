@@ -173,11 +173,11 @@ export class SessionManager extends EventEmitter {
         .then((known) =>
           waitForNewCodexSessionIn(session.cwd, known).then((newSessionId) => [newSessionId, known])
         )
-        .then(([newSessionId]) => {
+        .then(async ([newSessionId]) => {
           // A session that exited and left the roster has no row left to
           // update, and no reason to keep holding an id for.
           if (!newSessionId || this.sessions.get(session.id) !== session) return;
-          sessionHistory.update(session.id, { codexSessionId: newSessionId });
+          await sessionHistory.update(session.id, { codexSessionId: newSessionId });
           session.codexSessionId = newSessionId;
           // The poll only tracks sessions with an id to read, and this session
           // did not have one when it was created, so start it now.
