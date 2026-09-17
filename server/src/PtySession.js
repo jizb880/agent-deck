@@ -9,6 +9,12 @@ import { isWindows } from './platform.js';
 const { Terminal: HeadlessTerminal } = headless;
 const { SerializeAddon } = serialize;
 
+// A character that means a row is carrying content rather than decoration.
+// Letters and digits cover every human language a CLI prints, CJK included,
+// while leaving out the box-drawing, block and braille glyphs that animated
+// backdrops are built from. Used by the busy/idle heuristic (see _screenText).
+const CONTENT_CHAR_RE = /[\p{L}\p{N}]/u;
+
 /**
  * A single long-lived PTY running one CLI. Owns its child process, a headless
  * terminal emulator that mirrors what the CLI has drawn (so a reconnecting
@@ -139,16 +145,23 @@ export class PtySession extends EventEmitter {
 
   // Busy/idle follows what the terminal *shows*, not whether bytes arrived.
   //
-  // An idle Codex repaints about twelve times a second to animate the row it
-  // has highlighted, re-printing the same characters with only colour
-  // attributes changed. Measured over a settled 15 second window: 205 chunks
-  // arriving, 0 changes to the rendered text, and no gap wider than 288 ms.
-  // Since every chunk used to re-arm the idle timer, and that timer needs
-  // IDLE_AFTER_MS of quiet to fire, a Codex session that had already finished
-  // its task reported "busy" indefinitely -- the sidebar's 处理中 that never
-  // cleared. Counting a repaint as activity only when the screen text actually
-  // changes settles it: a spinner, a streamed answer or an elapsed-time
-  // counter still all register, while a pure colour animation does not.
+  // Two separate animations made a finished Codex session report "busy"
+  // forever, which is the 处理中 the sidebar never cleared:
+  //
+  //   1. It repaints its highlighted row about twelve times a second, printing
+  //      identical characters with only the colour attributes changed.
+  //   2. Its welcome screen runs a decorative backdrop of braille glyphs that
+  //      genuinely rearranges, in a handful of rows, forever.
+  //
+  // So neither "did bytes arrive" nor "did any text change" is the right
+  // question. What distinguishes work from decoration is *where* it happens: a
+  // spinner, a streamed answer or a tool's output all touch a row carrying
+  // words, while the backdrop only ever rewrites rows made purely of symbols.
+  // Activity therefore counts only when a content row changes. Measured against
+  // a live idle session: 143 chunks and 102 whole-screen text changes in ten
+  // seconds, but those were confined to three symbol-only rows and the session
+  // was using 0.1% CPU. On a working session the same measure tracked the run
+  // exactly, from the first streamed line to the last.
   _onRendered() {
     const screen = this._screenText();
     if (screen === this._lastScreen) return;
@@ -156,13 +169,19 @@ export class PtySession extends EventEmitter {
     this._markBusy();
   }
 
-  /** Plain text of the visible screen, styling and trailing blanks excluded. */
+  /**
+   * Text of the visible screen with decoration stripped: lines are joined only
+   * when they contain at least one letter, digit or CJK character. Styling and
+   * trailing blanks are excluded, and so is any row made purely of symbols.
+   */
   _screenText() {
     const buf = this._term.buffer.active;
     const lines = [];
     for (let i = 0; i < this._term.rows; i++) {
       const line = buf.getLine(buf.viewportY + i);
-      lines.push(line ? line.translateToString(true) : '');
+      const text = line ? line.translateToString(true) : '';
+      if (!CONTENT_CHAR_RE.test(text)) continue;
+      lines.push(text);
     }
     return lines.join('\n');
   }

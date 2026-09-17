@@ -128,3 +128,33 @@ test('an exited session does not write to a dead pty', async () => {
   assert.deepEqual(writes, []);
   s.release();
 });
+
+test('a decorative backdrop does not count as activity', async () => {
+  // Codex's welcome screen animates a field of braille glyphs forever, with no
+  // words anywhere in those rows. Because the glyphs genuinely rearrange, a
+  // plain "did any text change" test reports a finished session as busy for as
+  // long as it sits there -- the 处理中 that never cleared.
+  const s = new PtySession({ launch: LAUNCH });
+  await feed(s, 'ready\r\n');
+  assert.equal(s.status, 'busy');
+  s.status = 'idle';
+
+  const art = (glyphs) => `\x1b[10;1H\x1b[2m${glyphs}\x1b[0m`;
+  await feed(s, art('⠁   ⠈         ⠄          ⢀  ⠈   ⠁'));
+  await feed(s, art('    ⠈                    ⢀        ⢀   '));
+  await feed(s, art('       ⢀         ⠄        ⠄         ⠠'));
+  assert.equal(s.status, 'idle', 'symbol-only rows are decoration, not work');
+  s.release();
+});
+
+test('a spinner made of symbols still counts, because its row has text', async () => {
+  // The distinction is per row, not per character: an agent's own status line
+  // animates its spinner but also carries words, so it must keep the session
+  // busy -- otherwise a long run would report idle while still running.
+  const s = new PtySession({ launch: LAUNCH });
+  await feed(s, 'ready\r\n');
+  s.status = 'idle';
+  await feed(s, '\x1b[2;1H\x1b[2m✻\x1b[0m Working… (3s)');
+  assert.equal(s.status, 'busy', 'a row carrying words is activity');
+  s.release();
+});
