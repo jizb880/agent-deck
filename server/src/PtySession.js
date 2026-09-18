@@ -52,6 +52,7 @@ export class PtySession extends EventEmitter {
     // the first render, so a session whose opening frame is blank still counts
     // as having drawn something. See _onRendered().
     this._lastScreen = null;
+    this._lastWorkArea = null;
 
     // Everything the child ever printed, as the terminal *rendered* it. The
     // previous design kept the last 1 MiB of raw bytes, but a TUI like Claude
@@ -167,7 +168,17 @@ export class PtySession extends EventEmitter {
     const screen = this._screenText();
     if (screen === this._lastScreen) return;
     this._lastScreen = screen;
-    this._markBusy();
+
+    // Only mark busy when the *work area* changes — the middle rows where
+    // streamed output, tool results, and prompts appear. The first and last
+    // content rows are TUI header/status bars (elapsed time, token counts,
+    // etc.) that update every second even when codex is idle, so excluding
+    // them prevents those ticks from continuously resetting the idle timer.
+    const workArea = this._workAreaText(screen);
+    if (workArea !== this._lastWorkArea) {
+      this._lastWorkArea = workArea;
+      this._markBusy();
+    }
   }
 
   /**
@@ -184,6 +195,21 @@ export class PtySession extends EventEmitter {
       if (!CONTENT_CHAR_RE.test(text)) continue;
       lines.push(text);
     }
+    return lines.join('\n');
+  }
+
+  /**
+   * The work area: _screenText() minus the first and last content rows.
+   * Those border rows are where TUI applications put header/footer bars that
+   * tick independently of user activity. Middle rows change only when codex
+   * is actually streaming, running a tool, or waiting for input.
+   *
+   * Falls back to the full screen text when there are two or fewer rows, so
+   * short sessions (e.g. a simple shell) still get busy detection.
+   */
+  _workAreaText(screenText) {
+    const lines = (screenText ?? this._screenText()).split('\n');
+    if (lines.length > 2) return lines.slice(1, -1).join('\n');
     return lines.join('\n');
   }
 
