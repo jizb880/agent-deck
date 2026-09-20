@@ -150,7 +150,7 @@ export const CLI_KINDS = {
     resume: false,
   },
   codex: {
-    label: 'Codex',
+    label: 'Codex CLI',
     bin: 'codex',
     // Bare `codex` is already the interactive TUI — "if no subcommand is
     // specified, options will be forwarded to the interactive CLI". The
