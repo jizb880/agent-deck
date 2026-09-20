@@ -123,7 +123,20 @@ export class SessionManager extends EventEmitter {
       // there, try to resume it with the new binary, and the new binary
       // opens the new database, finds nothing, and shows the upgrade prompt
       // again as if the session never existed.
-      if (session.kind === 'codex') resetStateDbCache();
+      //
+      // resetStateDbCache() also detects whether the database path actually
+      // changed (i.e. an upgrade happened). When it did, clear the stored
+      // codexSessionId so reopen() starts a fresh session instead of resuming
+      // the one whose last visible state was the upgrade-prompt UI. Without
+      // this the user would re-open the session, codex would resume it, and
+      // the upgrade prompt would reappear because it was the last thing drawn.
+      if (session.kind === 'codex') {
+        const { upgraded } = resetStateDbCache();
+        if (upgraded && session.codexSessionId) {
+          session.codexSessionId = null;
+          sessionHistory.update(session.id, { codexSessionId: null }).catch(() => {});
+        }
+      }
       this._emitSessions();
       this._scheduleReap(session.id);
     });

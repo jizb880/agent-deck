@@ -67,10 +67,24 @@ function stateDb() {
  * for the highest-numbered state_N.sqlite. Call this after a codex session
  * exits: an upgrade may have replaced the active database file, and a stale
  * path would make session-existence checks read the wrong file.
+ *
+ * Returns { upgraded: boolean } — true when the active database path changed
+ * while the session was running (i.e. codex installed a new binary and
+ * migrated its database). Callers use this to decide whether to clear the
+ * stored session id: resuming the old session with a new binary re-shows the
+ * upgrade prompt because the conversation context contains the upgrade UI
+ * state, so starting fresh is the right behaviour after an upgrade.
  */
 export function resetStateDbCache() {
+  const oldPath = stateDbResolved ? stateDbPath : undefined;
   stateDbPath = undefined;
   stateDbResolved = false;
+  // Re-probe immediately so the cache is warm for the next caller and so we
+  // can compare old vs new in one place rather than spreading that logic.
+  const newPath = findStateDb();
+  stateDbPath = newPath;
+  stateDbResolved = true;
+  return { upgraded: oldPath != null && newPath !== oldPath };
 }
 
 /**
