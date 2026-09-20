@@ -26,7 +26,7 @@ const KIND_LABEL = {
   opencode: 'OpenCode',
   openclaw: 'OpenClaw',
   hermes: 'Hermes',
-  codex: 'Codex',
+  codex: 'Codex CLI',
   terminal: 'Terminal',
 };
 const STATUS_LABEL = {
