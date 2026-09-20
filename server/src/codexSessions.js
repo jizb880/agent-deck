@@ -97,6 +97,14 @@ async function queryThreads(sql) {
   let db;
   try {
     db = new sqliteModule.DatabaseSync(dbPath, { readOnly: true });
+    // Fail immediately on any lock contention rather than blocking the Node.js
+    // event loop. The default busy_timeout is unlimited, which means a codex
+    // upgrade holding an exclusive migration lock could freeze the whole server
+    // (including WebSocket input forwarding) until it finishes. With timeout=0
+    // we get SQLITE_BUSY right away, fall through to the catch, and return [].
+    // The context poll just misses that tick; the next poll reads fine once the
+    // upgrade is done.
+    try { db.exec('PRAGMA busy_timeout = 0'); } catch { /* ignore */ }
     return db.prepare(sql).all();
   } catch {
     // A locked or half-migrated database is not an error worth surfacing: the
