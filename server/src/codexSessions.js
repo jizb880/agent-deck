@@ -43,6 +43,14 @@ function findStateDb() {
 // connection is short-lived per query instead -- see queryThreads -- because
 // codex holds the file open for writing and a long-lived read handle would
 // keep returning a stale snapshot.
+//
+// The cache is intentionally resettable: a codex upgrade replaces the active
+// SQLite file (state_N.sqlite → state_N+1.sqlite). If we kept pointing at the
+// old file after the upgrade, codexSessionExists() would report the session as
+// resumable while the new binary would find it absent in the new database,
+// causing it to start a fresh session and show the upgrade prompt again.
+// resetStateDbCache() is called whenever a codex session exits so the next
+// probe picks up whichever database the new binary is actually writing to.
 let stateDbPath;
 let stateDbResolved = false;
 
@@ -52,6 +60,17 @@ function stateDb() {
     stateDbResolved = true;
   }
   return stateDbPath;
+}
+
+/**
+ * Drop the cached state-database path so the next query re-probes ~/.codex
+ * for the highest-numbered state_N.sqlite. Call this after a codex session
+ * exits: an upgrade may have replaced the active database file, and a stale
+ * path would make session-existence checks read the wrong file.
+ */
+export function resetStateDbCache() {
+  stateDbPath = undefined;
+  stateDbResolved = false;
 }
 
 /**

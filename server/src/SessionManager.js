@@ -6,7 +6,7 @@ import { personaStore } from './personaStore.js';
 import { sessionHistory } from './sessionHistory.js';
 import { CLI_KINDS, REAP_EXITED_AFTER_MS, CONTEXT_POLL_MS } from './config.js';
 import { transcriptExists } from './claudeSessions.js';
-import { codexSessionExists, listCodexSessionIds, waitForNewCodexSessionIn } from './codexSessions.js';
+import { codexSessionExists, listCodexSessionIds, waitForNewCodexSessionIn, resetStateDbCache } from './codexSessions.js';
 import { contextUsageFor } from './contextUsage.js';
 
 /**
@@ -116,6 +116,14 @@ export class SessionManager extends EventEmitter {
     session.on('status', () => this._emitSessions());
     session.on('exit', () => {
       sessionHistory.touch(session.id, session.lastActivity);
+      // A codex upgrade replaces the active SQLite database file while the
+      // session was running. Drop the cached db path so the next existence
+      // check re-probes ~/.codex for the highest-numbered state_N.sqlite —
+      // otherwise we keep querying the pre-upgrade file, find the session
+      // there, try to resume it with the new binary, and the new binary
+      // opens the new database, finds nothing, and shows the upgrade prompt
+      // again as if the session never existed.
+      if (session.kind === 'codex') resetStateDbCache();
       this._emitSessions();
       this._scheduleReap(session.id);
     });
