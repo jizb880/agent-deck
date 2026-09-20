@@ -320,12 +320,22 @@ export class SessionManager extends EventEmitter {
       if (!entry.cwd) resumeSessionId = undefined;
     }
 
+    const spec = CLI_KINDS[entry.kind];
     const session = await this.create({
       personaId,
       kind: entry.kind,
       cwd: entry.cwd,
       model: entry.model,
-      title: entry.title,
+      // If the stored title matches a spec label that has since been renamed,
+      // apply the current label so the tab header stays in sync automatically.
+      // This covers any CLI whose label changes in config.js without requiring
+      // users to manually rename every historical session.
+      title: (() => {
+        if (!spec || !entry.title) return entry.title;
+        const oldLabels = Object.values(CLI_KINDS).map((s) => s.label);
+        const isDefaultLabel = oldLabels.includes(entry.title) || entry.title === spec.label;
+        return isDefaultLabel ? spec.label : entry.title;
+      })(),
       autoMode: entry.autoMode,
       // claude conversations continue in place; everything else starts anew.
       resumeSessionId,

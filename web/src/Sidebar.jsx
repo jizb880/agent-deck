@@ -20,13 +20,13 @@ function saveCollapsed(state) {
 
 // Fallback labels for a session whose kind is not in the server's list — e.g.
 // an old session still open after that CLI was uninstalled. Live labels come
-// from /api/cli-kinds; this only keeps a badge from rendering blank.
+// from /api/cli-kinds via the cliKinds prop and take precedence over these.
 const KIND_LABEL = {
   claude: 'Claude Code',
   opencode: 'OpenCode',
   openclaw: 'OpenClaw',
   hermes: 'Hermes',
-  codex: 'Codex CLI',
+  codex: 'Codex',
   terminal: 'Terminal',
 };
 const STATUS_LABEL = {
@@ -67,6 +67,7 @@ function SessionRow({
   session,
   active,
   dragging,
+  kindLabelMap,
   onOpen,
   onKill,
   onRemove,
@@ -161,7 +162,7 @@ function SessionRow({
           </div>
         )}
         <div className="sess-sub">
-          <span className={`kind-badge ${session.kind}`}>{KIND_LABEL[session.kind]}</span>
+          <span className={`kind-badge ${session.kind}`}>{kindLabelMap[session.kind] || KIND_LABEL[session.kind] || session.kind}</span>
           <span className="status-text">{STATUS_LABEL[session.status] || session.status}</span>
           {session.context && (
             <span
@@ -235,7 +236,7 @@ function relativeTime(ts, now) {
 // session is no longer in the live roster (backend restarted, or it was
 // removed) reopens it on click — and only those rows offer the ×, since a live
 // session is managed from the Sessions list.
-function RecentRow({ session, active, now, onOpen, onReopen, onRemove }) {
+function RecentRow({ session, active, now, kindLabelMap, onOpen, onReopen, onRemove }) {
   const live = session.live !== false;
   return (
     <div
@@ -245,7 +246,7 @@ function RecentRow({ session, active, now, onOpen, onReopen, onRemove }) {
     >
       <span className={`dot ${session.status}`} />
       <span className="recent-title">{session.title}</span>
-      <span className={`kind-badge ${session.kind}`}>{KIND_LABEL[session.kind] || session.kind}</span>
+      <span className={`kind-badge ${session.kind}`}>{kindLabelMap[session.kind] || KIND_LABEL[session.kind] || session.kind}</span>
       <span className="recent-time">{relativeTime(session.lastActivity, now)}</span>
       {!live && (
         <button
@@ -286,6 +287,15 @@ export default function Sidebar({
   // Installed agent CLIs, in registry order. `terminal` is always available
   // and gets its own button, so it's filtered out of the generated set.
   const agentKinds = (cliKinds || []).filter((k) => k.id !== 'terminal' && k.available);
+
+  // Map kind id -> live label from the server. Takes precedence over the
+  // static KIND_LABEL fallback so a label change in config.js propagates
+  // to the kind-badge without a frontend code change.
+  const kindLabelMap = useMemo(() => {
+    const map = {};
+    for (const k of cliKinds || []) map[k.id] = k.label;
+    return map;
+  }, [cliKinds]);
 
   // Collapsed state per section, persisted. Two sections today; the keys are
   // plain strings so more can be added later without a migration.
@@ -393,6 +403,7 @@ export default function Sidebar({
                 session={s}
                 active={s.id === activeId}
                 dragging={s.id === dragId}
+                kindLabelMap={kindLabelMap}
                 onOpen={onOpenSession}
                 onKill={onKillSession}
                 onRemove={onRemoveSession}
@@ -429,6 +440,7 @@ export default function Sidebar({
                 session={s}
                 active={s.id === activeId}
                 now={now}
+                kindLabelMap={kindLabelMap}
                 onOpen={onOpenSession}
                 onReopen={onReopenSession}
                 onRemove={onRemoveHistory}
