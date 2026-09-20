@@ -445,6 +445,9 @@ export default function Sidebar({
                 onReopen={onReopenSession}
                 onRemove={onRemoveHistory}
               />
+                onReopen={onReopenSession}
+                onRemove={onRemoveHistory}
+              />
             ))}
             {recentSessions.length === 0 && <div className="muted small">还没有最近使用的会话。</div>}
           </div>
