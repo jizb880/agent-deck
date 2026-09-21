@@ -93,6 +93,14 @@ export function latestUsageFromText(text) {
     } catch {
       continue;
     }
+    // A compact_boundary entry records postTokens — the token count immediately
+    // after /compact ran. It lands at the tail and must win over any older
+    // assistant turn, so check it before the normal usage path.
+    if (entry.type === 'system' && entry.subtype === 'compact_boundary') {
+      const postTokens = Number(entry?.compactMetadata?.postTokens);
+      if (postTokens > 0) return { tokens: postTokens, model: null };
+      continue;
+    }
     // A sidechain entry is a sub-agent's own conversation with its own separate
     // context window, so it must not be mistaken for the main one's occupancy.
     if (entry.isSidechain) continue;

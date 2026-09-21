@@ -211,3 +211,51 @@ test('a codex rollout with no turns yet reports nothing', async () => {
     assert.equal(m.latestCodexUsageFromText(text), null);
   });
 });
+
+// ---- /compact boundary ----
+
+test('a compact_boundary entry reports postTokens, not the pre-compact assistant turn', async () => {
+  await withProjectsRoot(async (m) => {
+    const root = process.env.CLAUDE_PROJECTS_DIR;
+    const cwd = path.join(os.tmpdir(), 'proj-compact');
+    // Before compaction: a large context.
+    const preTurn = turn({ input: 100, cacheRead: 150_000 }); // 150_100 tokens
+    // The compact_boundary entry Claude Code appends after /compact.
+    const boundary = JSON.stringify({
+      type: 'system',
+      subtype: 'compact_boundary',
+      isSidechain: false,
+      compactMetadata: {
+        trigger: 'manual',
+        preTokens: 150_100,
+        postTokens: 9_500,
+        cumulativeDroppedTokens: 140_600,
+      },
+    });
+    writeTranscript(root, cwd, [preTurn, boundary]);
+    const usage = await m.contextUsageFor({ cwd, sessionId: SESSION_ID });
+    assert.ok(usage, 'usage found after compact');
+    // Must reflect the post-compact figure, not the stale pre-compact turn.
+    assert.equal(usage.tokens, 9_500);
+    assert.equal(usage.percent, 5); // 9_500 / 200_000 = 4.75 -> rounds to 5
+  });
+});
+
+test('after compact, a subsequent assistant turn takes over when it is newer', async () => {
+  await withProjectsRoot(async (m) => {
+    const root = process.env.CLAUDE_PROJECTS_DIR;
+    const cwd = path.join(os.tmpdir(), 'proj-compact-then-work');
+    const boundary = JSON.stringify({
+      type: 'system',
+      subtype: 'compact_boundary',
+      isSidechain: false,
+      compactMetadata: { trigger: 'manual', preTokens: 150_000, postTokens: 9_000, cumulativeDroppedTokens: 141_000 },
+    });
+    // A new assistant turn written after compaction — this should be the figure shown.
+    const postTurn = turn({ input: 4, cacheRead: 30_000 }); // 30_004 tokens
+    writeTranscript(root, cwd, [boundary, postTurn]);
+    const usage = await m.contextUsageFor({ cwd, sessionId: SESSION_ID });
+    assert.ok(usage);
+    assert.equal(usage.tokens, 30_004);
+  });
+});
