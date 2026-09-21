@@ -199,17 +199,24 @@ export class PtySession extends EventEmitter {
   }
 
   /**
-   * The work area: _screenText() minus the first and last content rows.
-   * Those border rows are where TUI applications put header/footer bars that
-   * tick independently of user activity. Middle rows change only when codex
-   * is actually streaming, running a tool, or waiting for input.
+   * The work area: _screenText() minus the border rows that TUI applications
+   * use for header/footer bars ticking independently of user activity.
    *
-   * Falls back to the full screen text when there are two or fewer rows, so
-   * short sessions (e.g. a simple shell) still get busy detection.
+   * Codex has a two-row border zone (one header row carrying the model name /
+   * token count and one footer row carrying elapsed time / keybindings) that
+   * updates continuously even while the session is idle. Stripping only one
+   * row from each end left those ticking rows in the work area, which kept
+   * resetting the idle timer after /compact completed. Two rows from each end
+   * covers the full border for both Claude Code (one-row borders) and Codex
+   * (two-row borders).
+   *
+   * Falls back to the full screen text when there are four or fewer content
+   * rows, so short sessions (e.g. a plain shell) still get busy detection.
    */
   _workAreaText(screenText) {
     const lines = (screenText ?? this._screenText()).split('\n');
-    if (lines.length > 2) return lines.slice(1, -1).join('\n');
+    const trim = this.kind === 'codex' ? 2 : 1;
+    if (lines.length > trim * 2) return lines.slice(trim, -trim).join('\n');
     return lines.join('\n');
   }
 
