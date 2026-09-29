@@ -95,7 +95,7 @@ function usesThirdPartyRelay(baseUrl) {
  * differently: Windows passes it through as argv, POSIX quotes each element
  * into a `-lc` command string.
  */
-function buildCliArgs(spec, { model, agent, systemPrompt, addDirs, extraArgs, resumeSessionId, autoMode, sessionId, forkSession = true }) {
+function buildCliArgs(spec, { model, agent, systemPrompt, addDirs, extraArgs, resumeSessionId, autoMode, sessionId, forkSession = true, noAltScreen = false }) {
   // For CLIs that use a subcommand for resume (like codex: `codex resume <id>`)
   if (resumeSessionId && spec.resume && spec.resumeViaSubcommand) {
     const args = ['resume', normalizeSessionId(resumeSessionId)];
@@ -105,6 +105,10 @@ function buildCliArgs(spec, { model, agent, systemPrompt, addDirs, extraArgs, re
     if (systemPrompt && spec.promptFlag) args.push(spec.promptFlag, systemPrompt);
     if (spec.addDirFlag) for (const d of addDirs) args.push(spec.addDirFlag, d);
     if (autoMode && spec.bin === 'codex') args.push('--yolo');
+    // Inline mode, so the pane keeps a real scrollback and selection works
+    // (see config.js). Gated by the caller on a capability probe: this flag
+    // must never reach a build that would exit on an unknown argument.
+    if (noAltScreen && spec.noAltScreenFlag) args.push(spec.noAltScreenFlag);
     for (const a of extraArgs) args.push(a);
     return args;
   }
@@ -149,6 +153,10 @@ function buildCliArgs(spec, { model, agent, systemPrompt, addDirs, extraArgs, re
   if (systemPrompt && spec.promptFlag) args.push(spec.promptFlag, systemPrompt);
   if (spec.addDirFlag) for (const d of addDirs) args.push(spec.addDirFlag, d);
   if (autoMode && spec.bin === 'codex') args.push('--yolo');
+  // Same inline-mode flag as the resume branch above; see config.js for why it
+  // exists and cliCapabilities.js for why the caller only passes it when the
+  // installed binary advertises it.
+  if (noAltScreen && spec.noAltScreenFlag) args.push(spec.noAltScreenFlag);
 
   // extraArgs are raw tokens supplied by the operator in the persona config —
   // the escape hatch for any flag this table doesn't model.
@@ -248,6 +256,7 @@ export function buildLaunch(persona, overrides = {}) {
     autoMode: overrides.autoMode,
     sessionId: overrides.sessionId,
     forkSession: overrides.forkSession,
+    noAltScreen: overrides.noAltScreen,
   });
 
   if (isWindows()) {

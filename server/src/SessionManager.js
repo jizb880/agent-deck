@@ -8,6 +8,7 @@ import { CLI_KINDS, REAP_EXITED_AFTER_MS, CONTEXT_POLL_MS } from './config.js';
 import { transcriptExists } from './claudeSessions.js';
 import { codexSessionExists, listCodexSessionIds, waitForNewCodexSessionIn, resetStateDbCache } from './codexSessions.js';
 import { contextUsageFor } from './contextUsage.js';
+import { codexSupportsNoAltScreen } from './cliCapabilities.js';
 
 /**
  * Registry of all live PTY sessions. Emits 'sessions' whenever the roster or a
@@ -81,6 +82,18 @@ export class SessionManager extends EventEmitter {
       }
     }
 
+    // Codex draws its TUI on the terminal's alternate screen by default: that
+    // buffer has no scrollback, so the pane showed no scrollbar and could not
+    // be scrolled back, and codex enables mouse tracking there, so a drag was
+    // reported to the app instead of selecting text. --no-alt-screen is codex's
+    // own escape hatch for exactly this (see config.js).
+    //
+    // Awaited before buildLaunch because the flag is only safe to emit when the
+    // installed binary advertises it — an unknown argument makes codex exit 2 at
+    // startup, which would kill the tab with nothing on screen. The probe is
+    // cached for the life of the process, so this is a one-time cost.
+    const noAltScreen = persona.kind === 'codex' ? await codexSupportsNoAltScreen() : false;
+
     const overrides = {
       kind,
       cwd,
@@ -92,6 +105,7 @@ export class SessionManager extends EventEmitter {
       autoMode,
       sessionId: pinnedSessionId,
       forkSession,
+      noAltScreen: noAltScreen || undefined,
     };
     // Drop undefined so persona defaults win.
     for (const k of Object.keys(overrides)) {

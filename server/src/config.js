@@ -162,6 +162,16 @@ export const CLI_KINDS = {
     agentFlag: null,
     promptFlag: null,
     addDirFlag: '--add-dir',
+    // Codex draws its TUI on the terminal's alternate screen by default. That
+    // buffer has no scrollback at all, so the dashboard's pane showed no
+    // scrollbar and could not be scrolled back; codex also enables mouse
+    // tracking there, so a drag was reported to the app instead of selecting
+    // text. `--no-alt-screen` is codex's own documented escape hatch ("runs the
+    // TUI in inline mode, preserving terminal scrollback history") and turns
+    // both off. Emitted only when the installed binary advertises the flag —
+    // see cliCapabilities.js — because an unknown flag makes codex exit 2 at
+    // startup, which kills the tab before it can draw anything.
+    noAltScreenFlag: '--no-alt-screen',
     // Codex uses `codex resume <session_id>` subcommand instead of --resume flag
     resume: true,
     resumeViaSubcommand: true,
