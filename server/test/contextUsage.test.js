@@ -58,9 +58,15 @@ function writeTranscript(root, cwd, lines) {
 
 test('the window size follows the model', async () => {
   await withProjectsRoot(async (m) => {
-    assert.equal(m.contextWindowFor('claude-sonnet-5'), 200_000);
-    assert.equal(m.contextWindowFor('claude-opus-5'), 200_000);
+    // Current-gen models have a 1M window. Measured transcripts of these models
+    // have reached 900K+ tokens, which is impossible under a 200K window.
+    assert.equal(m.contextWindowFor('claude-sonnet-5'), 1_000_000);
+    assert.equal(m.contextWindowFor('claude-opus-5'), 1_000_000);
+    assert.equal(m.contextWindowFor('claude-fable-5-1'), 1_000_000);
+    // Older generations stay at 200K.
     assert.equal(m.contextWindowFor('claude-haiku-4-5-20251001'), 200_000);
+    assert.equal(m.contextWindowFor('claude-opus-4-8'), 200_000);
+    // Explicit [1m] suffix always wins.
     assert.equal(m.contextWindowFor('claude-sonnet-5[1m]'), 1_000_000);
     // Unknown models must fall back rather than produce a nonsense percentage.
     assert.equal(m.contextWindowFor('some-future-model'), 200_000);
@@ -80,7 +86,8 @@ test('the newest usage record wins', async () => {
     assert.ok(usage, 'usage found');
     // 4 + 50_000 + 100_000, not the earlier turn's smaller figure.
     assert.equal(usage.tokens, 150_004);
-    assert.equal(usage.percent, 75);
+    // claude-sonnet-5 is a 1M-window model; 150_004 / 1_000_000 = 15%
+    assert.equal(usage.percent, 15);
   });
 });
 
@@ -94,7 +101,8 @@ test('cached prompt tokens count toward occupancy', async () => {
     writeTranscript(root, cwd, [turn({ input: 4, cacheCreate: 0, cacheRead: 100_000 })]);
     const usage = await m.contextUsageFor({ cwd, sessionId: SESSION_ID });
     assert.equal(usage.tokens, 100_004);
-    assert.equal(usage.percent, 50);
+    // claude-sonnet-5 is a 1M-window model; 100_004 / 1_000_000 = 10%
+    assert.equal(usage.percent, 10);
   });
 });
 
@@ -212,13 +220,42 @@ test('a codex rollout with no turns yet reports nothing', async () => {
   });
 });
 
+test('codex falls back to token_count for older rollout formats without token_usage_record', async () => {
+  await withProjectsRoot(async (m) => {
+    // Codex builds before token_usage_record was added wrote token_count records
+    // instead. The info.last_token_usage.input_tokens field is this turn's
+    // prompt size, which is the quantity that occupies the context window.
+    const lines = [
+      JSON.stringify({ type: 'session_meta', payload: { session_id: 'x', cwd: '/tmp/p' } }),
+      JSON.stringify({
+        type: 'token_count',
+        payload: {
+          info: {
+            last_token_usage: {
+              input_tokens: 34_786,
+              cached_input_tokens: 27_520,
+              output_tokens: 215,
+              total_tokens: 35_001,
+            },
+            model_context_window: 258_400,
+          },
+        },
+      }),
+    ];
+    const usage = m.latestCodexUsageFromText(lines.join('\n'));
+    assert.ok(usage, 'usage found from token_count record');
+    assert.equal(usage.tokens, 34_786);
+    assert.equal(usage.window, 258_400);
+  });
+});
+
 // ---- /compact boundary ----
 
 test('a compact_boundary entry reports postTokens, not the pre-compact assistant turn', async () => {
   await withProjectsRoot(async (m) => {
     const root = process.env.CLAUDE_PROJECTS_DIR;
     const cwd = path.join(os.tmpdir(), 'proj-compact');
-    // Before compaction: a large context.
+    // Before compaction: a large context on a 1M-window model (claude-sonnet-5).
     const preTurn = turn({ input: 100, cacheRead: 150_000 }); // 150_100 tokens
     // The compact_boundary entry Claude Code appends after /compact.
     const boundary = JSON.stringify({
@@ -237,7 +274,10 @@ test('a compact_boundary entry reports postTokens, not the pre-compact assistant
     assert.ok(usage, 'usage found after compact');
     // Must reflect the post-compact figure, not the stale pre-compact turn.
     assert.equal(usage.tokens, 9_500);
-    assert.equal(usage.percent, 5); // 9_500 / 200_000 = 4.75 -> rounds to 5
+    // The scanner continues past the boundary to find the model from preTurn
+    // (claude-sonnet-5 = 1M window). 9_500 / 1_000_000 = 0.95 → rounds to 1%.
+    assert.equal(usage.percent, 1);
+    assert.equal(usage.window, 1_000_000);
   });
 });
 
