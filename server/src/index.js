@@ -5,6 +5,7 @@ import { HOST, PORT, WEB_DIST, SESSION_HISTORY_FILE } from './config.js';
 import { registerRoutes } from './httpRoutes.js';
 import { attachWebSocket } from './wsBridge.js';
 import { sessionHistory } from './sessionHistory.js';
+import { codexSupportsNoAltScreen } from './cliCapabilities.js';
 
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL || 'info' } });
 
@@ -18,6 +19,17 @@ app.log.info(
 );
 
 registerRoutes(app);
+
+// Warm the CLI capability probe before the first session is created. The
+// answer decides launch flags like codex's --no-alt-screen, and the probe
+// spawns the CLI's --help — cheap when the binary is already on this
+// process's PATH, but seconds when it has to go through a login shell. Doing
+// it here keeps that cost off the first create request and makes the same
+// answer available to every session that follows.
+codexSupportsNoAltScreen().then(
+  (ok) => app.log.info(`codex --no-alt-screen supported: ${ok}`),
+  () => {}
+);
 
 // Serve the built frontend if present. In dev, Vite serves the UI on :5173
 // and proxies /api + /ws here, so this block is a no-op until `npm run build`.

@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { CLI_KINDS } from './config.js';
-import { findExecutable, isWindows, posixLoginShell } from './platform.js';
+import { findExecutable, posixLoginShell } from './platform.js';
 
 /**
  * Whether the *installed* CLI advertises a given command-line flag.
@@ -25,9 +25,22 @@ import { findExecutable, isWindows, posixLoginShell } from './platform.js';
  */
 
 // A pathological install (a wrapper that blocks on the network, a first run
-// that wants to download) must not hang the create request. 3s matches the
-// login-PATH probe in cliDetect.js.
-const PROBE_TIMEOUT_MS = 3000;
+// that wants to download) must not hang the create request.
+//
+// The direct exec is the normal path and only has to cover the CLI's own
+// startup (~0.17s for codex). The login-shell fallback pays the cost of
+// sourcing the user's profile on top of that — measured at ~2.8s for a bare
+// `bash -lc true` and ~4.6s for `codex --help` on macOS — so it gets a much
+// larger budget. A 3s limit across both was what silently disabled the codex
+// fix on every launch: the probe timed out, reported "unsupported", and every
+// codex tab was spawned on the alternate screen with no scrollback.
+// Separate knobs on purpose: the direct probe is a bare binary exec, while the
+// fallback pays for the user's profile. Sharing one value would put the direct
+// budget on the shell path and re-create the original bug.
+const PROBE_TIMEOUT_MS = Number(process.env.CLI_PROBE_TIMEOUT_MS || 3000);
+const LOGIN_SHELL_PROBE_TIMEOUT_MS = Number(
+  process.env.CLI_PROBE_LOGIN_TIMEOUT_MS || 15000
+);
 
 const cache = new Map();
 
@@ -38,35 +51,57 @@ function advertises(text, flag) {
   return new RegExp(`(^|\\s)${escaped}(\\s|$)`).test(text);
 }
 
-function probe(kind, flag) {
-  const spec = CLI_KINDS[kind];
-  if (!spec || !spec.bin) return Promise.resolve(false);
-
+/**
+ * Ask one path for `flag`. Resolves { supported, timedOut } so the caller can
+ * tell "the binary said no" (cacheable) from "we never got an answer"
+ * (not cacheable — the next launch should try again).
+ */
+function ask(exe, args, timeout, flag, env) {
   return new Promise((resolve) => {
-    const done = (err, stdout, stderr) => {
+    execFile(exe, args, { timeout, env }, (err, stdout, stderr) => {
       // clap writes --help to stdout, but some versions use stderr; consult
       // both rather than guessing. A non-zero exit still carries usable text.
-      resolve(advertises(`${stdout || ''}\n${stderr || ''}`, flag));
-    };
-    if (isWindows()) {
-      // No shell in the chain on Windows (see launcher.js), so resolve the
-      // executable the same way the launcher will and invoke it directly.
-      const bin = findExecutable(spec.bin, process.env);
-      if (!bin) return resolve(false);
-      execFile(bin, ['--help'], { timeout: PROBE_TIMEOUT_MS }, done);
-      return;
-    }
-    // Run through the login shell so the probe searches the same PATH the
-    // launch will — a CLI in ~/.npm-global/bin is otherwise invisible when the
-    // dashboard was started from a GUI app with a minimal environment.
-    const shell = posixLoginShell(process.env);
-    execFile(
-      shell,
-      ['-lc', `${spec.bin} --help`],
-      { timeout: PROBE_TIMEOUT_MS, env: process.env },
-      done
-    );
+      const text = `${stdout || ''}\n${stderr || ''}`;
+      if (text.trim()) {
+        resolve({ supported: advertises(text, flag), timedOut: false });
+        return;
+      }
+      // No output at all: the spawn failed or was killed. A timeout is the
+      // common case (a slow login shell) and must NOT become a cached "no".
+      resolve({ supported: false, timedOut: Boolean(err && (err.killed || err.signal)) });
+    });
   });
+}
+
+async function probe(kind, flag) {
+  const spec = CLI_KINDS[kind];
+  if (!spec || !spec.bin) return { supported: false, timedOut: false };
+
+  // Prefer the launcher's own resolution against THIS process's PATH: the
+  // dashboard inherits the user's shell environment (npm run / a terminal
+  // launch), so the binary is usually visible directly, and skipping the
+  // login shell turns a multi-second probe into a ~0.17s one that cannot
+  // time out on a profile loaded with nvm/conda/oh-my-zsh.
+  const bin = findExecutable(spec.bin, process.env);
+  if (bin) {
+    const direct = await ask(bin, ['--help'], PROBE_TIMEOUT_MS, flag, process.env);
+    if (!direct.timedOut) return direct;
+    // Timed out even without the shell: fall through to the shell path, which
+    // is also what a GUI-launched server with a minimal PATH needs.
+  }
+
+  // The launcher itself goes through a login shell on POSIX, so that is where
+  // the CLI must be found when this process's PATH can't see it (a dashboard
+  // started from a GUI app with a minimal environment).
+  const shell = spec.shell !== undefined ? spec.shell : posixLoginShell(process.env);
+  const viaShell = await ask(
+    shell,
+    ['-lc', `${spec.bin} --help`],
+    LOGIN_SHELL_PROBE_TIMEOUT_MS,
+    flag,
+    process.env
+  );
+  return viaShell;
 }
 
 /**
@@ -74,13 +109,26 @@ function probe(kind, flag) {
  *
  * The promise itself is cached, so concurrent launches share one probe and a
  * rejection can never be observed twice.
+ *
+ * Except on a timeout. A probe that never got an answer is not evidence that
+ * the CLI lacks the flag — it is evidence that this machine was slow at that
+ * moment. Caching the resulting `false` for the life of the process is how
+ * the codex fix silently turned itself off: one slow login shell at the first
+ * codex launch, and every codex tab after it ran on the alternate screen with
+ * no scrollback. A timeout is therefore reported as false to this caller but
+ * evicted, so the next launch probes again.
  */
 export function supportsFlag(kind, flag) {
   if (!flag) return Promise.resolve(false);
   const key = `${kind} ${flag}`;
   const hit = cache.get(key);
   if (hit) return hit;
-  const promise = probe(kind, flag).catch(() => false);
+  const promise = probe(kind, flag)
+    .catch(() => ({ supported: false, timedOut: false }))
+    .then((result) => {
+      if (result.timedOut) cache.delete(key);
+      return result.supported === true;
+    });
   cache.set(key, promise);
   return promise;
 }
