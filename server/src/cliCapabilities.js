@@ -52,9 +52,16 @@ function advertises(text, flag) {
 }
 
 /**
- * Ask one path for `flag`. Resolves { supported, timedOut } so the caller can
- * tell "the binary said no" (cacheable) from "we never got an answer"
- * (not cacheable — the next launch should try again).
+ * Ask one path for `flag`. Resolves { supported, definitive }.
+ *
+ * `definitive` is the only thing the cache may key on: it means the binary
+ * actually answered. Everything else — a timeout, a signal, a spawn failure,
+ * a silent non-zero exit — is an unanswered question, and caching it as "not
+ * supported" is how the codex fix silently disabled itself: one transient
+ * failure during the first launch, and every codex tab afterwards ran on the
+ * alternate screen with no scrollback. It is also why a *no-output* answer is
+ * treated as unanswered rather than as a negative: `--help` always prints
+ * something, so silence means we never heard from the binary.
  */
 function ask(exe, args, timeout, flag, env) {
   return new Promise((resolve) => {
@@ -63,19 +70,19 @@ function ask(exe, args, timeout, flag, env) {
       // both rather than guessing. A non-zero exit still carries usable text.
       const text = `${stdout || ''}\n${stderr || ''}`;
       if (text.trim()) {
-        resolve({ supported: advertises(text, flag), timedOut: false });
+        resolve({ supported: advertises(text, flag), definitive: true });
         return;
       }
-      // No output at all: the spawn failed or was killed. A timeout is the
-      // common case (a slow login shell) and must NOT become a cached "no".
-      resolve({ supported: false, timedOut: Boolean(err && (err.killed || err.signal)) });
+      resolve({ supported: false, definitive: false });
     });
   });
 }
 
 async function probe(kind, flag) {
   const spec = CLI_KINDS[kind];
-  if (!spec || !spec.bin) return { supported: false, timedOut: false };
+  // No binary to probe is a definitive answer about the *spec*, not a
+  // transient failure — caching it is correct and saves a lookup per launch.
+  if (!spec || !spec.bin) return { supported: false, definitive: true };
 
   // Prefer the launcher's own resolution against THIS process's PATH: the
   // dashboard inherits the user's shell environment (npm run / a terminal
@@ -85,8 +92,8 @@ async function probe(kind, flag) {
   const bin = findExecutable(spec.bin, process.env);
   if (bin) {
     const direct = await ask(bin, ['--help'], PROBE_TIMEOUT_MS, flag, process.env);
-    if (!direct.timedOut) return direct;
-    // Timed out even without the shell: fall through to the shell path, which
+    if (direct.definitive) return direct;
+    // No answer even without the shell: fall through to the shell path, which
     // is also what a GUI-launched server with a minimal PATH needs.
   }
 
@@ -110,13 +117,14 @@ async function probe(kind, flag) {
  * The promise itself is cached, so concurrent launches share one probe and a
  * rejection can never be observed twice.
  *
- * Except on a timeout. A probe that never got an answer is not evidence that
- * the CLI lacks the flag — it is evidence that this machine was slow at that
- * moment. Caching the resulting `false` for the life of the process is how
- * the codex fix silently turned itself off: one slow login shell at the first
- * codex launch, and every codex tab after it ran on the alternate screen with
- * no scrollback. A timeout is therefore reported as false to this caller but
- * evicted, so the next launch probes again.
+ * Except when there was no answer. A probe that timed out, was killed, or
+ * produced no output at all is not evidence that the CLI lacks the flag — it
+ * is evidence that this machine, or that one spawn, failed. Caching the
+ * resulting `false` for the life of the process is how the codex fix silently
+ * turned itself off: one bad probe at the first codex launch, and every codex
+ * tab after it ran on the alternate screen with no scrollback. An unanswered
+ * probe is reported as false to this caller but evicted, so the next launch
+ * asks again.
  */
 export function supportsFlag(kind, flag) {
   if (!flag) return Promise.resolve(false);
@@ -124,9 +132,9 @@ export function supportsFlag(kind, flag) {
   const hit = cache.get(key);
   if (hit) return hit;
   const promise = probe(kind, flag)
-    .catch(() => ({ supported: false, timedOut: false }))
+    .catch(() => ({ supported: false, definitive: false }))
     .then((result) => {
-      if (result.timedOut) cache.delete(key);
+      if (!result.definitive) cache.delete(key);
       return result.supported === true;
     });
   cache.set(key, promise);

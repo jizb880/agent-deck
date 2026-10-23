@@ -57,6 +57,31 @@ test('a timed-out probe is not cached and the next call re-probes', async () => 
   }
 });
 
+test('a probe that answers nothing at all is not cached either', async () => {
+  // Silence is not a "no": --help always prints something, so an empty answer
+  // means the spawn failed or the CLI never spoke. Caching it is how the codex
+  // pane silently lost its scrollback: the server's first codex launch after a
+  // restart hit one such probe and every later launch skipped the flag.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctlapp-silent-'));
+  const realBin = CLI_KINDS.codex.bin;
+  try {
+    resetCliCapabilitiesCache();
+    CLI_KINDS.codex.bin = writeBin(dir, 'exit 1'); // no output, no timeout
+    assert.equal(await supportsFlag('codex', '--no-alt-screen'), false);
+
+    writeBin(dir, 'echo "  --no-alt-screen  inline mode"');
+    assert.equal(
+      await supportsFlag('codex', '--no-alt-screen'),
+      true,
+      'an unanswered probe must not be cached as unsupported'
+    );
+  } finally {
+    CLI_KINDS.codex.bin = realBin;
+    resetCliCapabilitiesCache();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a definitive negative answer is cached', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctlapp-negative-'));
   const realBin = CLI_KINDS.codex.bin;

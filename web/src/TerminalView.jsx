@@ -6,6 +6,7 @@ import { wsClient } from './wsClient.js';
 import { OutputCoalescer } from './outputCoalescer.js';
 import { imeMaskedControlByte } from './imeControlKeys.js';
 import { getScrollHistory, saveScrollHistory, pruneScrollHistory } from './scrollMemory.js';
+import { nextFollow, REJOIN_ROWS } from './followMode.js';
 
 // Light terminal theme (GitHub-light-ish ANSI palette tuned for a white bg).
 const LIGHT_THEME = {
@@ -333,29 +334,52 @@ export default function TerminalView({ sessionId, active, kind, context }) {
       return true;
     });
 
-    // Leave follow mode only on a deliberate upward scroll; rejoin whenever
-    // the viewport comes back near the bottom (wheel, scrollbar, or scroll).
+    // Follow-mode policy lives in followMode.js (see the comment there for
+    // the bug it encodes): an explicit wheel-up leaves follow, and only an
+    // explicit scroll back down re-attaches. Position alone must not, or a
+    // one-notch wheel-up during streaming is yanked straight back to the
+    // bottom by the next write's scrollToBottom.
+    const fromBottomNow = () => {
+      const buf = term.buffer.active;
+      return buf.baseY - buf.viewportY;
+    };
+    // Change in fromBottom since the last state update. Positive = moved up.
+    // Tracking fromBottom rather than viewportY keeps scrollback trimming
+    // (both baseY and viewportY dropping together) from reading as a scroll.
+    let lastFromBottom = null;
+    const deltaFromBottom = () => {
+      const now = fromBottomNow();
+      const delta = lastFromBottom === null ? 0 : now - lastFromBottom;
+      lastFromBottom = now;
+      return delta;
+    };
+
     const onWheel = (e) => {
-      if (e.deltaY < 0) followRef.current = false;
+      const fromBottom = fromBottomNow();
+      const follow = nextFollow({
+        follow: followRef.current,
+        fromBottom,
+        wheelUp: e.deltaY < 0,
+        hasScrollback: term.buffer.active.baseY > 0,
+      });
+      followRef.current = follow;
+      scrollStateRef.current = follow ? { follow: true, offset: 0 } : { follow: false, offset: fromBottom };
       if (restoringRef.current) userScrolledRef.current = true;
     };
     hostRef.current.addEventListener('wheel', onWheel, { passive: true });
-    // Rejoin within a few rows of the bottom rather than at exact equality.
-    // While output streams, each new line pushes baseY down faster than a
-    // manual scroll can land on it, so viewportY === baseY is essentially
-    // never hit — the user chases a bottom that keeps moving and can "never
-    // reach it." A small threshold lets a downward scroll re-engage follow
-    // mode mid-stream, after which scrollToBottom keeps it pinned.
-    const REJOIN_ROWS = 3;
     const updateScrollState = () => {
-      const buf = term.buffer.active;
-      const fromBottom = buf.baseY - buf.viewportY;
-      if (fromBottom <= REJOIN_ROWS) {
-        followRef.current = true;
-        scrollStateRef.current = { follow: true, offset: 0 };
-      } else {
-        scrollStateRef.current = { follow: false, offset: fromBottom };
-      }
+      const fromBottom = fromBottomNow();
+      const follow = nextFollow({
+        follow: followRef.current,
+        fromBottom,
+        deltaFromBottom: deltaFromBottom(),
+      });
+      followRef.current = follow;
+      scrollStateRef.current = follow
+        ? { follow: true, offset: 0 }
+        : // Keep the reader's position even when follow stays on: the offset
+          // is what scrollMemory restores after a tab switch.
+          { follow: false, offset: fromBottom };
     };
     term.onScroll(() => {
       if (restoringRef.current) {
@@ -396,6 +420,9 @@ export default function TerminalView({ sessionId, active, kind, context }) {
           const saved = scrollStateRef.current;
           restoringRef.current = true;
           userScrolledRef.current = false;
+          // The replay replaces the buffer wholesale; a delta measured across
+          // it would read as a huge scroll. Start the intent tracker fresh.
+          lastFromBottom = null;
           // Pre-set follow so a fit/activation that lands mid-replay (before
           // the write callback) doesn't snap to the bottom and undo the
           // restore below.
